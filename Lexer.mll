@@ -54,20 +54,27 @@ rule lexer = parse
   | ';' {T_semi}
 
   | white+               { lexer lexbuf }
-  | '-''-' notln* ('\n'|eof)   { lexer lexbuf }
-  
-  (* 
-  | let
-  
-    in
-		"(*" (  )
-		
-	*)
+  | '-''-' notln* { lexer lexbuf }
+    
+  | "(*" { print_endline "comments start"; comments 0 lexbuf }
 
   |  eof          { T_eof }
   |  _ as chr     { Printf.eprintf "invalid character: '%c' (ascii: %d)"
                       chr (Char.code chr);
                     lexer lexbuf }
+                    
+and comments level = parse
+    | "*)" { Printf.printf "comments (%d) end\n" level;
+             if level = 0 then lexer lexbuf
+             else comments (level-1) lexbuf
+           }
+    | "(*" { Printf.printf "comments (%d) start\n" (level+1);
+             comments (level+1) lexbuf
+           }
+    | _ { comments level lexbuf }
+    | eof { print_endline "comments are not closed";
+            exit 1
+          }
 
 {
   let string_of_token token =
@@ -111,23 +118,13 @@ rule lexer = parse
 	  | T_assign -> "T_assign"
 	  | T_char -> "T_char"
 	  | T_string -> "T_string"
-	  
-  (*
+      
+      (*
   rule count lines words chars = parse
   | '\n' {count (lines + 1) words (chars + 1) lexbuf }
   | [^ ' ' '\t' '\n']+ as word{ count lines (words + 1) (chars + String.length word) lexbuf }
   | _  { count lines words (chars+1) lexbuf }
   | eof  { (lines, words, chars) }
   *)
-  let main =
-    let lexbuf = Lexing.from_channel stdin in
-    let rec loop () =
-      let token = lexer lexbuf in
-      Printf.printf "token=%s, lexeme=\"%s\"\n"
-        (string_of_token token) (Lexing.lexeme lexbuf);
-      if token <> T_eof then loop () in
-    loop ()
-	
-	(*let (lines, words, chars) = count 0 0 0 lexbuf in 
-	Printf.printf "%d lines, %d words, %d chars\n" lines words chars*)
+
 }
