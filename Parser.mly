@@ -1,3 +1,7 @@
+%{
+open Ast
+%}
+
 %token T_byte
 %token T_else
 %token T_false
@@ -8,15 +12,15 @@
 %token T_return
 %token T_while
 %token T_true
-%token T_const
-%token T_var
+%token<int> T_const
+%token<string> T_id
 %token T_rparen
 %token T_lparen
 %token T_plus
 %token T_minus
 %token T_times
-%token T_char 
-%token T_string
+%token<char> T_char 
+%token<string> T_string
 %token T_assign
 %token T_div
 %token T_mod
@@ -47,130 +51,112 @@
 
 
 %start program
-%type <unit> program
-%type <unit> func_def
-%type <unit> fpar_list
-%type <unit> fpar_def
-%type <unit> type
-%type <unit> r_type
-%type <unit> local_def
-%type <unit> var_def
-%type <unit> stmt
-%type <unit> compound_stmt
-%type <unit> func_call
-%type <unit> expr_list
-%type <unit> expr
-%type <unit> l_value
-%type <unit> cond
-%type <unit> fpar_def_rep
-%type <unit> fpar_def_opt
-%type <unit> type_opt
-%type <unit> local_def_rep
-%type <unit> var_def_opt
-%type <unit> return_opt
-%type <unit> stmt_rep
-%type <unit> expr_list_opt
-%type <unit> expr_list_rep
-%type <unit> expr_opt
-%type <unit> data_type
+%type <Ast.func> program
 
 %%
 
-program   : func_def T_eof { () }
+program   : func_def T_eof { $1 }
 
-func_def : T_var T_lparen fpar_list_opt T_rparen T_colon r_type local_def_rep compound_stmt{ () }
+func_def : T_id T_lparen fpar_list_opt T_rparen T_colon r_type local_def_rep compound_stmt { 
+    {   
+        func_id = $1;
+        func_pars = $3;
+        func_type = $6;
+        func_local = $7;
+        func_stmt = $8;
+    }
+}
 
-fpar_list_opt : fpar_list {()}
-	| /* nothing */ { () }       
+fpar_list_opt : fpar_list { $1 }
+	| /* nothing */ { [] }       
 
-fpar_list : fpar_def fpar_def_rep { () }
+fpar_list : fpar_def fpar_def_rep { $1 :: $2 }
 
-fpar_def_rep : T_comma fpar_def fpar_def_rep { () }
-	| /* nothing */ { () }
+fpar_def_rep : T_comma fpar_def fpar_def_rep { $2 :: $3 }
+	| /* nothing */ { [] }
           
-fpar_def : T_var T_colon fpar_def_opt type { () }
+fpar_def : T_id T_colon fpar_def_opt typ { { par_id = $1 ; par_is_ref = $3 ; par_type = $4 ;} }
 
-fpar_def_opt : T_reference {()}
-	| /* nothing */ { () }
+fpar_def_opt : T_reference { Is_ref }
+	| /* nothing */ { Not_ref }
 
-data_type : T_int {()}
-	| T_byte { () }
+data_type : T_int { Int }
+	| T_byte { Byte }
 
-type : data_type type_opt { () }
+typ : data_type { Basic $1 }
 
-type_opt : T_lbra T_rbra {()}
-| /* nothing */ { () }
+typ : data_type T_lbra T_rbra { Array $1 }
 
-r_type : data_type {()}
-	| T_proc { () }
+r_type : data_type { R_data $1 }
+	| T_proc { R_proc }
 
-local_def_rep: local_def local_def_rep {()}
-	| /* nothing */ { () }
+local_def_rep: local_def local_def_rep { $1 :: $2 }
+	| /* nothing */ { [] }
 
-local_def : func_def {()}
-	| var_def {()}
+local_def : func_def { Local_func $1 }
+	| var_def { Local_var $1 }
 
-var_def : T_var T_colon data_type var_def_opt T_semi {()}
+var_def : T_id T_colon data_type var_def_opt T_semi { { var_id = $1 ; var_type = $3 ; var_const = $4 ;} }
 
-var_def_opt : T_lbra T_const T_rbra {()}
-	| /* nothing */ { () }
+var_def_opt : T_lbra T_const T_rbra { Some $2 }
+	| /* nothing */ { None }
 
-stmt : T_semi {()}
-	| l_value T_assign expr T_semi {()}
-	| compound_stmt {()}
-	| func_call T_semi {()}
-	| T_if T_lparen cond T_rparen stmt {()}
-	| T_if T_lparen cond T_rparen stmt T_else stmt {()}
-	| T_while T_lparen cond T_rparen stmt  {()}
-	| T_return return_opt T_semi {()}
+stmt : T_semi { None }
+	| l_value T_assign expr T_semi { S_assign ($1,$3) }
+	| compound_stmt { S_comp $1 }
+	| func_call T_semi { S_call $1 }
+	| T_if T_lparen cond T_rparen stmt { S_if ($3,$5,None) }
+	| T_if T_lparen cond T_rparen stmt T_else stmt { S_if ($3,$5,Some $7) }
+	| T_while T_lparen cond T_rparen stmt  { S_while ($3,$5) }
+	| T_return return_opt T_semi { S_return $2 }
 	
-return_opt : expr {()}
-	| /* nothing */ { () }
+return_opt : expr { Some $1 }
+	| /* nothing */ { None }
 
-compound_stmt : T_lcurl stmt_rep T_rcurl {()}
+compound_stmt : T_lcurl stmt_rep T_rcurl { $2 }
 
-stmt_rep : stmt stmt_rep {()}
-	| /* nothing */ { () }
+stmt_rep : stmt stmt_rep { $1 :: $2 }
+	| /* nothing */ { [] }
 
-func_call : T_var T_lparen expr_list_opt T_rparen {()}
+func_call : T_id T_lparen expr_list_opt T_rparen { { call_id = $1 ; call_expr = $3 ; } }
 
-expr_list_opt : expr_list {()}
-	| /* nothing */ { () }
+expr_list_opt : expr_list { $1 }
+	| /* nothing */ { [] }
 
-expr_list : expr expr_list_rep {()}
+expr_list : expr expr_list_rep { $1 :: $2 }
 
-expr_list_rep : T_comma expr expr_list_rep {()}
-	| /* nothing */ { () }
+expr_list_rep : T_comma expr expr_list_rep { $2 :: $3 }
+	| /* nothing */ { [] }
 
-expr : T_const {()}
-	| T_char {()}
-	| l_value {()}
-	| T_lparen expr T_rparen {()}
-	| func_call {()} 
+expr : T_const { E_int $1 }
+	| T_char { E_char $1 }
+	| l_value { E_val $1 }
+	| T_lparen expr T_rparen { $2 }
+	| func_call { E_call $1 } 
 	/*| sign expr {()}*/
-	| expr T_plus expr {()}
-	| expr T_minus expr {()}
-	| expr T_times expr {()}
-	| expr T_div expr {()}
-	| expr T_mod expr {()}
-	| T_plus expr %prec uplus {()}
-	| T_minus expr %prec uminus {()}
+	| expr T_plus expr { E_op ($1, Plus, $3) }
+	| expr T_minus expr { E_op ($1, Minus, $3) }
+	| expr T_times expr { E_op ($1, Mult, $3) }
+	| expr T_div expr { E_op ($1, Div, $3) }
+	| expr T_mod expr { E_op ($1, Mod, $3) }
+	| T_plus expr %prec uplus { E_sign (SPlus, $2) }
+	| T_minus expr %prec uminus { E_sign (SMinus, $2) }
 
-l_value : T_var expr_opt {()}
-	| T_string {()}
+l_value : T_id expr_opt { L_exp ($1, $2) }
+	| T_string { L_str $1 }
 	
-expr_opt : T_lbra expr T_rbra {()}
-	| /* nothing */ {()}
+expr_opt : T_lbra expr T_rbra { Some $2 }
+	| /* nothing */ { None }
 	
-cond : T_true {()}
-	| T_false {()}
-	| T_lparen cond T_rparen {()}
-	| T_not cond {()}
-	| expr T_eq expr {()}
-	| expr T_neq expr {()}
-	| expr T_lt expr {()}
-	| expr T_gt expr {()}
-	| expr T_le expr {()}
-	| expr T_ge expr {()}
-	| cond T_and cond {()}
-	| cond T_or cond {()}
+cond : T_true { C_true }
+	| T_false { C_false }
+	| T_lparen cond T_rparen { $2 }
+	| T_not cond { C_not $2 }
+	| expr T_eq expr { C_compare($1, Eq, $3) }
+	| expr T_neq expr { C_compare($1, Neq, $3) }
+	| expr T_lt expr { C_compare($1, Less, $3) }
+	| expr T_gt expr { C_compare($1, Great, $3) }
+	| expr T_le expr { C_compare($1, LessEq, $3) }
+	| expr T_ge expr { C_compare($1, GreatEq, $3) }
+	| cond T_and cond { C_logic($1, And, $3) }
+	| cond T_or cond { C_logic($1, Or, $3) }

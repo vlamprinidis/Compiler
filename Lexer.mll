@@ -1,12 +1,22 @@
 {
 	open Parser
+    
+    let escape1char scp = match scp with
+    | 'n' -> '\n'
+    | 't' -> '\t'
+    | 'r' -> '\r'
+    | '0' -> '\x00'
+    | _ -> scp
+    
+    let escape2char scp = Char.chr (int_of_string ("0x" ^(String.sub scp 2 (String.(length scp)-2))))
 }
 
 let digit  = ['0'-'9']
 let letter = ['a'-'z' 'A'-'Z']
 let white  = [' ' '\t' '\r' '\n']
 let chars = [^ '"' '\n' '\t' '\'' '\\']
-let escape ='\\' (['n' 't' 'r' '0' '\\' '\'' '"'] | ('x' ( digit | ['a'-'f'] ) ( digit | ['a'-'f'] ) ))
+let escape1 = '\\' ['n' 't' 'r' '0' '\\' '\'' '"']
+let escape2 = '\\' ('x' ( digit | ['a'-'f'] ) ( digit | ['a'-'f'] ) )
 let notln = [^ '\n']
 
 rule lexer = parse
@@ -21,10 +31,12 @@ rule lexer = parse
   | "while" {T_while}
   | "true" {T_true}
 
-  | digit+   { T_const }
-  | letter(letter|digit|'_')*   { T_var }
-  | "'" ( chars | escape ) "'" {T_char}
-  | '"' ( chars | escape )* '"' {T_string}
+  | digit+ as n   { T_const (int_of_string n)}
+  | letter(letter|digit|'_')* as x   { T_id x}
+  | "'" (chars as ch) "'" {T_char ch}
+  | "'" (escape1 as scp1) "'" {T_char  (escape1char scp1.[1])}
+  | "'" (escape2 as scp2) "'" {T_char  (escape2char scp2)}
+  | '"' (( chars | escape1 | escape2 )* as str) '"' {T_string str}
 
   | '='      { T_assign }
   | '+'      { T_plus }
@@ -75,56 +87,3 @@ and comments level = parse
     | eof { (*print_endline "comments are not closed";*)
             exit 1
           }
-
-{
-  let string_of_token token =
-    match token with
-      | T_eof    -> "T_eof"
-      | T_byte  -> "T_byte"
-      | T_else    -> "T_else"
-      | T_false    -> "T_false"
-      | T_if     -> "T_if"
-      | T_int  -> "T_int"
-      | T_proc    -> "T_proc"
-      | T_reference     -> "T_reference"
-      | T_return   -> "T_return"
-      | T_while     -> "T_while"
-      | T_true -> "T_true"
-	  | T_const  -> "T_const"
-      | T_var    -> "T_var"
-      | T_rparen -> "T_rparen"
-      | T_plus   -> "T_plus"
-      | T_minus  -> "T_minus"
-      | T_times  -> "T_times"
-	  | T_div -> "T_div"
-	  | T_mod -> "T_mod"
-	  | T_not -> "T_not"
-	  | T_and -> "T_and"
-	  | T_or -> "T_or"
-	  | T_eq -> "T_eq"
-	  | T_neq -> "T_neq"
-	  | T_lt -> "T_lt"
-	  | T_gt -> "T_gt"
-	  | T_le -> "T_le"
-	  | T_ge -> "T_ge"
-	  | T_lparen -> "T_lparen"
-	  | T_lbra -> "T_lbra"
-	  | T_rbra -> "T_rbra"
-	  | T_lcurl -> "T_lcurl"
-	  | T_rcurl -> "T_rcurl"
-	  | T_comma -> "T_comma"
-	  | T_colon -> "T_colon"
-	  | T_semi -> "T_semi"
-	  | T_assign -> "T_assign"
-	  | T_char -> "T_char"
-	  | T_string -> "T_string"
-      
-      (*
-  rule count lines words chars = parse
-  | '\n' {count (lines + 1) words (chars + 1) lexbuf }
-  | [^ ' ' '\t' '\n']+ as word{ count lines (words + 1) (chars + String.length word) lexbuf }
-  | _  { count lines words (chars+1) lexbuf }
-  | eof  { (lines, words, chars) }
-  *)
-
-}
