@@ -1,5 +1,6 @@
 %{
 open Ast
+open Types
 %}
 
 %token T_byte
@@ -75,20 +76,20 @@ fpar_list : fpar_def fpar_def_rep { $1 :: $2 }
 fpar_def_rep : T_comma fpar_def fpar_def_rep { $2 :: $3 }
 	| /* nothing */ { [] }
           
-fpar_def : T_id T_colon fpar_def_opt typ { { par_id = $1 ; par_is_ref = $3 ; par_type = $4 ;} }
+fpar_def : T_id T_colon fpar_def_opt alan_type { { par_id = $1 ; par_is_ref = $3 ; par_type = $4 ;} }
 
 fpar_def_opt : T_reference { Is_ref }
 	| /* nothing */ { Not_ref }
 
-data_type : T_int { Int }
-	| T_byte { Byte }
+data_type : T_int { TYPE_int }
+	| T_byte { TYPE_byte }
 
-typ : data_type { Basic $1 }
+alan_type : data_type { $1 }
 
-typ : data_type T_lbra T_rbra { Array $1 }
+alan_type : data_type T_lbra T_rbra { TYPE_array ($1,-1) (* -1 => array size here is not important *) }
 
-r_type : data_type { R_data $1 }
-	| T_proc { R_proc }
+r_type : data_type { $1 }
+	| T_proc { TYPE_proc }
 
 local_def_rep: local_def local_def_rep { $1 :: $2 }
 	| /* nothing */ { [] }

@@ -1,3 +1,5 @@
+open Types
+
 type id = string
 
 type reference = Is_ref | Not_ref
@@ -23,6 +25,7 @@ type logic_op =
 | And
 | Or
 
+(*
 type data_type =
 | Int
 | Byte
@@ -30,11 +33,12 @@ type data_type =
 type _type = 
 | Basic of data_type
 | Array of data_type
+*)
 
 type func = {
     func_id : id;
     func_pars : par list;
-    func_type : r_type;
+    func_type : typ;
     func_local : local list;
     func_stmt : stmt list;
 }
@@ -42,12 +46,8 @@ type func = {
 and par = {
     par_id : id;
     par_is_ref : reference;
-    par_type : _type;
+    par_type : typ;
 }
-
-and r_type =
-| R_data of data_type
-| R_proc
 
 and local = 
 | Local_func of func
@@ -55,7 +55,7 @@ and local =
 
 and var = {
     var_id : id;
-    var_type : data_type;
+    var_type : typ;
     var_const : int option;
 }
 
