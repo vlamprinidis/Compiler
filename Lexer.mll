@@ -68,7 +68,7 @@ rule lexer = parse
   | white+               { lexer lexbuf }
   | '-''-' notln* { lexer lexbuf }
     
-  | "(*" { print_endline "comments start"; comments 0 lexbuf }
+  | "(*" { (*print_endline "comments start";*) comments 0 lexbuf }
 
   |  eof          { T_eof }
   |  _ as chr     { Printf.eprintf "invalid character: '%c' (ascii: %d)"

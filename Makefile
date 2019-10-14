@@ -1,25 +1,44 @@
-# OS type: Linux/Win DJGPP
-ifdef OS
-   EXE=.exe
-else
-   EXE=
-endif
+EXEFILE=alan
+MLFILES=Hashcons.ml Identifier.ml Error.ml Types.ml Symbol.ml \
+  Ast.ml Lexer.ml Parser.ml Main.ml
+MLIFILES=Hashcons.mli Identifier.mli Error.mli Types.mli Symbol.mli \
+  Parser.mli
+CMOFILES=$(patsubst %.ml,%.cmo,$(MLFILES))
+CMIFILES=$(patsubst %.ml,%.cmi,$(MLFILES))
+CMXFILES=$(patsubst %.ml,%.cmx,$(MLFILES))
+OBJFILES=$(patsubst %.ml,%.o,$(MLFILES))
+PARSERFILES=Parser.ml Parser.mli Parser.output Lexer.ml
+SRCFILES=Makefile extend.ml Lexer.mll Parser.mly \
+  $(filter-out Parser.% Lexer.%,$(MLFILES)) \
+  $(filter-out Parser.%,$(MLIFILES))
 
+CAMLP5_FLAGS=-pp "camlp5o ./extend.cmo"
 OCAMLC_FLAGS=-g
-OCAMLC=ocamlc
+OCAMLOPT_FLAGS=
+OCAMLC=ocamlc $(OCAMLC_FLAGS)
+OCAMLOPT=ocamlopt $(OCAMLOPT_FLAGS)
 OCAMLDEP=ocamldep
+INCLUDES=
 
-%.cmo: %.ml %.mli
-	$(OCAMLC) $(OCAMLC_FLAGS) -c $<
+default: alan
 
-%.cmi: %.mli
-	$(OCAMLC) $(OCAMLC_FLAGS) -c $<
+extend.cmo: extend.ml
+	$(OCAMLC) -pp "camlp5o pa_extend.cmo q_MLast.cmo" -I +camlp5 -c $<
 
-%.cmo %.cmi: %.ml
-	$(OCAMLC) $(OCAMLC_FLAGS) -c $<
+%.cmo: %.ml %.mli extend.cmo
+	$(OCAMLC) $(CAMLP5_FLAGS) -c $<
 
-alan$(EXE): Lexer.cmo Parser.cmo Main.cmo
-	$(OCAMLC) $(OCAMLC_FLAGS) -o $@ $^
+%.cmx: %.ml extend.cmo
+	$(OCAMLOPT) $(CAMLP5_FLAGS) -c $<
+
+%.cmi: %.mli extend.cmo
+	$(OCAMLC) $(CAMLP5_FLAGS) -c $<
+
+%.cmo %.cmi: %.ml extend.cmo
+	$(OCAMLC) $(CAMLP5_FLAGS) -c $<
+
+$(EXEFILE): Parser.mli Lexer.ml $(CMOFILES)
+	$(OCAMLC) -o $@ $(CMOFILES)
 
 Lexer.ml: Lexer.mll
 	ocamllex -o $@ $<
@@ -31,11 +50,14 @@ Parser.ml Parser.mli: Parser.mly
 
 -include .depend
 
-depend: Lexer.ml Parser.ml Parser.mli Main.ml
-	$(OCAMLDEP) $^ > .depend
+depend: $(MLFILES) $(MLIFILES) extend.cmo
+	$(OCAMLDEP) $(CAMLP5_FLAGS) $(INCLUDES) \
+          $(filter-out extend.cmo,$^) > .depend
 
 clean:
-	$(RM) Lexer.ml Parser.ml Parser.mli Parser.output *.cmo *.cmi *~
+	$(RM) $(CMXFILES) $(CMOFILES) $(CMIFILES) $(OBJFILES) $(EXEFILES) \
+           extend.cmi extend.cmo \
+           $(patsubst %,%.cm?,$(EXEFILES)) $(PARSERFILES) pplib.cma *~
 
 distclean: clean
-	$(RM) alan$(EXE) .depend
+	$(RM) $(EXEFILE) .depend
