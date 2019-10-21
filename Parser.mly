@@ -1,6 +1,7 @@
 %{
 open Ast
 open Types
+open Symbol
 %}
 
 %token T_byte
@@ -76,10 +77,10 @@ fpar_list : fpar_def fpar_def_rep { $1 :: $2 }
 fpar_def_rep : T_comma fpar_def fpar_def_rep { $2 :: $3 }
 	| /* nothing */ { [] }
           
-fpar_def : T_id T_colon fpar_def_opt alan_type { { par_id = $1 ; par_is_ref = $3 ; par_type = $4 ;} }
+fpar_def : T_id T_colon fpar_def_opt alan_type { { par_id = $1 ; par_pass_way = $3 ; par_type = $4 ;} }
 
-fpar_def_opt : T_reference { Is_ref }
-	| /* nothing */ { Not_ref }
+fpar_def_opt : T_reference { PASS_BY_REFERENCE }
+	| /* nothing */ { PASS_BY_VALUE }
 
 data_type : T_int { TYPE_int }
 	| T_byte { TYPE_byte }
@@ -102,7 +103,7 @@ var_def : T_id T_colon data_type var_def_opt T_semi { { var_id = $1 ; var_type =
 var_def_opt : T_lbra T_const T_rbra { Some $2 }
 	| /* nothing */ { None }
 
-stmt : T_semi { None }
+stmt : T_semi { Null_stmt }
 	| l_value T_assign expr T_semi { S_assign ($1,$3) }
 	| compound_stmt { S_comp $1 }
 	| func_call T_semi { S_call $1 }

@@ -1,8 +1,11 @@
 open Types
+open Symbol
 
 type id = string
 
-type reference = Is_ref | Not_ref
+(* type reference = Is_ref | Not_ref *)
+
+(*type pass_way = PASS_BY_REFERENCE | PASS_BY_VALUE*)
 
 type sign = SPlus | SMinus
 
@@ -45,7 +48,7 @@ type func = {
 
 and par = {
     par_id : id;
-    par_is_ref : reference;
+    par_pass_way : pass_mode;
     par_type : typ;
 }
 
@@ -60,7 +63,7 @@ and var = {
 }
 
 and stmt = 
-| None
+| Null_stmt
 | S_assign of l_value * expr
 | S_comp of stmt list
 | S_call of func_call

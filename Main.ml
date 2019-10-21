@@ -1,10 +1,12 @@
 open Lexer
 open Parser
+open Semantic
 
 let main =
   let lexbuf = Lexing.from_channel stdin in
   try
-    Parser.program Lexer.lexer lexbuf;
+    let tree = Parser.program Lexer.lexer lexbuf in
+    seman tree;
     (*
     let 
         rec loop () =

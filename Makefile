@@ -1,6 +1,6 @@
 EXEFILE=alan
 MLFILES=Hashcons.ml Identifier.ml Error.ml Types.ml Symbol.ml \
-  Ast.ml Lexer.ml Parser.ml Main.ml
+  Ast.ml Semantic.ml Lexer.ml Parser.ml Main.ml
 MLIFILES=Hashcons.mli Identifier.mli Error.mli Types.mli Symbol.mli \
   Parser.mli
 CMOFILES=$(patsubst %.ml,%.cmo,$(MLFILES))
