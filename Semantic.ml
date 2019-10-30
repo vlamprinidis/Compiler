@@ -4,6 +4,7 @@ open Identifier
 open Types
 open Symbol
 open Ast
+open Error
 
 let show_offsets = true
 
@@ -94,7 +95,10 @@ let printSymbolTable () =
   printf "%a----------------------------------------\n"
     scope !currentScope
 
+let funTypeStack = Stack.create ()
 
+let myPrint s = pretty_typ std_formatter s
+    
 let seman tree =
 
     (* help funcs *)
@@ -112,49 +116,113 @@ let seman tree =
                 
             | C_compare (cond_expr_left, cond_compare_op, cond_expr_right) ->
                 make_expr cond_expr_left;
-                make_expr cond_expr_right
+                make_expr cond_expr_right;
+                if( (cond_expr_left.expr_type = Some TYPE_int || cond_expr_left.expr_type = Some TYPE_byte) && cond_expr_left.expr_type = cond_expr_right.expr_type )
+                then( () )
+                else( fatal "Compare type mismatch" )
                 
             | C_logic (cond_cond_left, cond_logic_op, cond_cond_right) ->
                 make_cond cond_cond_left;
                 make_cond cond_cond_right
-            
+    
+    (*check if parameter call is ok*)
     and make_call func_call_ast =
-        lookupEntry (id_make func_call_ast.call_id) LOOKUP_ALL_SCOPES true;
-        List.iter make_expr func_call_ast.call_expr
-        
+        let e = lookupEntry (id_make func_call_ast.call_id) LOOKUP_ALL_SCOPES true in
+        begin match e.entry_info with
+        | ENTRY_function func_entry ->
+            List.iter make_expr func_call_ast.call_expr;
+            
+            let get_param_typ param_entry = match param_entry.entry_info with 
+                                        | ENTRY_parameter par -> par.parameter_type
+                                        | _ -> fatal "Parameter declaration gone wrong -- Why?"; TYPE_none
+            in
+            let get_actual_param_typ expr_ = match expr_.expr_type with
+                                            | Some ex_type_some -> ex_type_some
+                                            | None -> fatal "Sth gone terribly wrong"; TYPE_none
+            in
+            
+            let declared_param_typ_lst = List.map get_param_typ func_entry.function_paramlist in
+            let actual_param_typ_lst = List.map get_actual_param_typ func_call_ast.call_expr in
+
+            if( ( List.length declared_param_typ_lst = List.length actual_param_typ_lst ) && 
+                ( List.for_all2 equalType declared_param_typ_lst actual_param_typ_lst )
+              )
+            
+            then( func_call_ast.return_type <- Some func_entry.function_result )
+            
+            else(
+                Printf.printf "%s" "Expected parameters: ";
+                List.iter myPrint declared_param_typ_lst;
+                print_newline ();
+                Printf.printf "%s" "Given parameters:    "; 
+                List.iter myPrint actual_param_typ_lst;
+                print_newline ();
+                fatal "Incorrect argument format" 
+            )
+            
+        | _ ->
+            fatal "Call of a non-function"
+        end
     and make_expr expr_ast = 
-        match expr_ast with
+        match expr_ast.expr_raw with
             | E_int ex_int -> 
-                ()
+                expr_ast.expr_type <- Some TYPE_int
                 
             | E_char ex_char -> 
-                ()
+                expr_ast.expr_type <- Some TYPE_byte
                 
             | E_val ex_l_value ->
-                make_l_value ex_l_value
+                make_l_value ex_l_value;
+                expr_ast.expr_type <- ex_l_value.l_value_type
                 
             | E_call ex_func_call ->
-                make_call ex_func_call
+                make_call ex_func_call;
+                expr_ast.expr_type <- ex_func_call.return_type
                 
             | E_sign (ex_sign, ex_expr) ->
-                make_expr ex_expr
+                make_expr ex_expr;
+                if(ex_expr.expr_type = Some TYPE_int)
+                then(expr_ast.expr_type <- ex_expr.expr_type)
+                else(fatal "Sign must be followed by an integer")
                 
             | E_op (ex_expr_left, ex_op, ex_expr_right) ->
                 make_expr ex_expr_left;
-                make_expr ex_expr_right
+                make_expr ex_expr_right;
+                if(ex_expr_left.expr_type = Some TYPE_int && ex_expr_left.expr_type = ex_expr_right.expr_type)
+                then(expr_ast.expr_type <- ex_expr_left.expr_type)
+                else(fatal "Type mismatch")
             
     and make_l_value l_value_ast =
-        match l_value_ast with
+        match l_value_ast.l_value_raw with
             | L_exp (lval_id, lval_expr_opt) ->
-                lookupEntry (id_make lval_id) LOOKUP_ALL_SCOPES true;
+                let e = lookupEntry (id_make lval_id) LOOKUP_ALL_SCOPES true in
+                let e_typ = match e.entry_info with
+                    | ENTRY_variable var_info ->
+                        Some var_info.variable_type
+                    | ENTRY_parameter par_info ->
+                        Some par_info.parameter_type
+                    | _ -> 
+                        fatal "Identifier not valid";
+                        None
+                in
                 begin match lval_expr_opt with
                     | Some lval_expr_some -> 
-                        make_expr lval_expr_some
-                    | None -> 
-                        ()
+                        (*Check if not array*)
+                        begin match e_typ with
+                            | Some (TYPE_array (elem_typ,_)) -> 
+                                make_expr lval_expr_some;
+                                (*Check if index is int*)
+                                if( lval_expr_some.expr_type <> Some TYPE_int )
+                                then( fatal "Array index must be an integer" );
+                                l_value_ast.l_value_type <- Some elem_typ
+                            | _ -> 
+                                fatal "Variable not an array"
+                        end
+                    | None ->
+                        l_value_ast.l_value_type <- e_typ
                 end
-            | L_str lval_str -> 
-                ()
+            | L_str lval_str -> (*String literal = TYPE_array (TYPE_byte,size < 0)*)
+                l_value_ast.l_value_type <- Some TYPE_array (TYPE_byte,-1)
     in
     
     let rec make_stmt stmt_ast = 
@@ -164,7 +232,13 @@ let seman tree =
                 
             | S_assign (st_l_value, st_expr) ->
                 make_expr st_expr;
-                make_l_value st_l_value
+                make_l_value st_l_value;
+                begin match (st_l_value.l_value_type, st_expr.expr_type) with
+                    | (Some TYPE_array (TYPE_byte,siz),_)   -> if( siz < 0 ) then ( fatal "Cannot assign value to a string literal" )
+                    | (Some TYPE_proc,_)                    -> fatal "L value is a procedure -- How did this happen?" (*Obsolete*)
+                    | (_,Some TYPE_proc)                    -> fatal "Cannot assign a procedure" (*Obsolete*)
+                    | (typ1,typ2)                           -> if(typ1 <> typ2)then(fatal "Assignment type mismatch")
+                end
                 
             | S_comp st_stmt_lst ->
                 List.iter make_stmt st_stmt_lst
@@ -187,16 +261,22 @@ let seman tree =
                 make_stmt st_stmt
                 
             | S_return st_expr_opt -> 
+                let funTypeTop = Stack.pop funTypeStack in
                 begin match st_expr_opt with
-                    | Some st_expr_some -> 
-                        make_expr st_expr_some
-                    | None -> 
-                        ()
+                    | Some st_expr_some ->
+                        Stack.push funTypeTop funTypeStack;
+                        if( funTypeTop = TYPE_proc )
+                        then( fatal "Procedure cannot return a value" )
+                        else( make_expr st_expr_some; if( st_expr_some.expr_type <> Some funTypeTop ) then ( fatal "Return type mismatch" ) )
+                    | None ->
+                        Stack.push funTypeTop funTypeStack;
+                        if( funTypeTop <> TYPE_proc )
+                        then( fatal "Return statement cannot be empty here" )
                 end        
     in
     
     let make_par f par_ast =
-        newParameter (id_make par_ast.par_id) par_ast.par_type par_ast.par_pass_way f true;
+        ignore (newParameter (id_make par_ast.par_id) par_ast.par_type par_ast.par_pass_way f true);
         ()
     in
     
@@ -206,11 +286,18 @@ let seman tree =
                 make_func loc_func;
                 ()
             | Local_var loc_var ->
-                newVariable (id_make loc_var.var_id) loc_var.var_type true;
+                (*In case an array is declared, its size needs to be a positive integer*)
+                begin match loc_var.var_type with
+                    | TYPE_array (_,siz)    -> if(siz <= 0)then(fatal "Array size must be a positive integer")
+                    | _                     -> ()
+                end;
+                ignore (newVariable (id_make loc_var.var_id) loc_var.var_type true);
                 ()
+                
     and make_func f_ast =
         
         let f_SYM = newFunction (id_make f_ast.func_id) true in
+        Stack.push f_ast.func_type funTypeStack;
         openScope ();
         
         List.iter (make_par f_SYM) f_ast.func_pars;
@@ -219,8 +306,10 @@ let seman tree =
         List.iter make_local f_ast.func_local;
         List.iter make_stmt f_ast.func_stmt;
         
-        printSymbolTable ();
+        (* printSymbolTable (); *)
         closeScope ();
+        ignore (Stack.pop funTypeStack);
+        ()
     in
     
     initSymbolTable 256;
@@ -259,7 +348,7 @@ let seman tree =
     let f_wStr = newFunction (id_make "writeString") true in
     openScope ();
     
-    make_par f_wStr {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_byte};
+    make_par f_wStr {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)};
     endFunctionHeader f_wStr TYPE_proc;
     
     closeScope ();
@@ -293,7 +382,7 @@ let seman tree =
     openScope ();
     
     List.iter (make_par f_rStr) [{par_id = "n"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_int};
-                                 {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_byte}];
+                                 {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)}];
     endFunctionHeader f_rStr TYPE_proc;
     
     closeScope ();
@@ -320,7 +409,7 @@ let seman tree =
     let f_len = newFunction(id_make "strlen") true in
     openScope ();
     
-    make_par f_len {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_byte};
+    make_par f_len {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)};
     endFunctionHeader f_len TYPE_int;
     
     closeScope ();
@@ -329,8 +418,8 @@ let seman tree =
     let f_cmp = newFunction (id_make "strcmp") true in
     openScope ();
     
-    List.iter (make_par f_cmp) [{par_id = "s1"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_byte};
-                                {par_id = "s2"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_byte}];
+    List.iter (make_par f_cmp) [{par_id = "s1"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)};
+                                {par_id = "s2"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)}];
     endFunctionHeader f_cmp TYPE_int;
     
     closeScope ();
@@ -339,8 +428,8 @@ let seman tree =
     let f_cpy = newFunction (id_make "strcpy") true in
     openScope ();
     
-    List.iter (make_par f_cpy) [{par_id = "trg"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_byte};
-                                {par_id = "src"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_byte}];
+    List.iter (make_par f_cpy) [{par_id = "trg"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)};
+                                {par_id = "src"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)}];
     endFunctionHeader f_cpy TYPE_proc;
     
     closeScope ();
@@ -349,8 +438,8 @@ let seman tree =
     let f_cat = newFunction (id_make "strcat") true in
     openScope ();
     
-    List.iter (make_par f_cat) [{par_id = "trg"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_byte};
-                                {par_id = "src"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_byte}];
+    List.iter (make_par f_cat) [{par_id = "trg"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)};
+                                {par_id = "src"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)}];
     endFunctionHeader f_cat TYPE_proc;
 
     closeScope ();

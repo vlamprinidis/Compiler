@@ -2,6 +2,9 @@
 open Ast
 open Types
 open Symbol
+
+let form_expr ex = {expr_raw = ex; expr_type = None;}
+let form_lval lv = {l_value_raw = lv; l_value_type = None;}
 %}
 
 %token T_byte
@@ -77,7 +80,7 @@ fpar_list : fpar_def fpar_def_rep { $1 :: $2 }
 fpar_def_rep : T_comma fpar_def fpar_def_rep { $2 :: $3 }
 	| /* nothing */ { [] }
           
-fpar_def : T_id T_colon fpar_def_opt alan_type { { par_id = $1 ; par_pass_way = $3 ; par_type = $4 ;} }
+fpar_def : T_id T_colon fpar_def_opt par_type { { par_id = $1 ; par_pass_way = $3 ; par_type = $4 ;} }
 
 fpar_def_opt : T_reference { PASS_BY_REFERENCE }
 	| /* nothing */ { PASS_BY_VALUE }
@@ -85,9 +88,9 @@ fpar_def_opt : T_reference { PASS_BY_REFERENCE }
 data_type : T_int { TYPE_int }
 	| T_byte { TYPE_byte }
 
-alan_type : data_type { $1 }
+par_type : data_type { $1 }
 
-alan_type : data_type T_lbra T_rbra { TYPE_array ($1,-1) (* -1 => array size here is not important *) }
+par_type : data_type T_lbra T_rbra { TYPE_array ($1,0) (* 0 => array size is not known *) }
 
 r_type : data_type { $1 }
 	| T_proc { TYPE_proc }
@@ -98,10 +101,9 @@ local_def_rep: local_def local_def_rep { $1 :: $2 }
 local_def : func_def { Local_func $1 }
 	| var_def { Local_var $1 }
 
-var_def : T_id T_colon data_type var_def_opt T_semi { { var_id = $1 ; var_type = $3 ; var_const = $4 ;} }
+var_def : T_id T_colon data_type T_semi { { var_id = $1 ; var_type = $3 ;} }
 
-var_def_opt : T_lbra T_const T_rbra { Some $2 }
-	| /* nothing */ { None }
+var_def : T_id T_colon data_type T_lbra T_const T_rbra T_semi { { var_id = $1 ; var_type = TYPE_array ($3,$5) ;} }
 
 stmt : T_semi { Null_stmt }
 	| l_value T_assign expr T_semi { S_assign ($1,$3) }
@@ -120,7 +122,7 @@ compound_stmt : T_lcurl stmt_rep T_rcurl { $2 }
 stmt_rep : stmt stmt_rep { $1 :: $2 }
 	| /* nothing */ { [] }
 
-func_call : T_id T_lparen expr_list_opt T_rparen { { call_id = $1 ; call_expr = $3 ; } }
+func_call : T_id T_lparen expr_list_opt T_rparen { { call_id = $1 ; call_expr = $3 ; return_type = None ; } }
 
 expr_list_opt : expr_list { $1 }
 	| /* nothing */ { [] }
@@ -130,22 +132,22 @@ expr_list : expr expr_list_rep { $1 :: $2 }
 expr_list_rep : T_comma expr expr_list_rep { $2 :: $3 }
 	| /* nothing */ { [] }
 
-expr : T_const { E_int $1 }
-	| T_char { E_char $1 }
-	| l_value { E_val $1 }
+expr : T_const { form_expr (E_int $1) }
+	| T_char { form_expr (E_char $1) }
+	| l_value { form_expr (E_val $1) }
 	| T_lparen expr T_rparen { $2 }
-	| func_call { E_call $1 } 
+	| func_call { form_expr (E_call $1) } 
 	/*| sign expr {()}*/
-	| expr T_plus expr { E_op ($1, Plus, $3) }
-	| expr T_minus expr { E_op ($1, Minus, $3) }
-	| expr T_times expr { E_op ($1, Mult, $3) }
-	| expr T_div expr { E_op ($1, Div, $3) }
-	| expr T_mod expr { E_op ($1, Mod, $3) }
-	| T_plus expr %prec uplus { E_sign (SPlus, $2) }
-	| T_minus expr %prec uminus { E_sign (SMinus, $2) }
+	| expr T_plus expr { form_expr ( E_op ($1, Plus, $3) ) }
+	| expr T_minus expr { form_expr ( E_op ($1, Minus, $3) ) }
+	| expr T_times expr { form_expr ( E_op ($1, Mult, $3) ) }
+	| expr T_div expr { form_expr ( E_op ($1, Div, $3) ) }
+	| expr T_mod expr { form_expr ( E_op ($1, Mod, $3) ) }
+	| T_plus expr %prec uplus { form_expr ( E_sign (SPlus, $2) ) }
+	| T_minus expr %prec uminus { form_expr ( E_sign (SMinus, $2) ) }
 
-l_value : T_id expr_opt { L_exp ($1, $2) }
-	| T_string { L_str $1 }
+l_value : T_id expr_opt { form_lval ( L_exp ($1, $2) ) }
+	| T_string { form_lval ( L_str $1 ) }
 	
 expr_opt : T_lbra expr T_rbra { Some $2 }
 	| /* nothing */ { None }

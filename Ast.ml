@@ -59,7 +59,6 @@ and local =
 and var = {
     var_id : id;
     var_type : typ;
-    var_const : int option;
 }
 
 and stmt = 
@@ -74,9 +73,10 @@ and stmt =
 and func_call = {
     call_id : id;
     call_expr : expr list;
+    mutable return_type : typ option;
 }
 
-and expr = 
+and raw_expr = 
 | E_int of int
 | E_char of char
 | E_val of l_value
@@ -84,9 +84,19 @@ and expr =
 | E_sign of sign * expr
 | E_op of expr * op * expr
 
-and l_value = 
+and expr = {
+    expr_raw : raw_expr;
+    mutable expr_type : typ option;
+}
+
+and raw_l_value = 
 | L_exp of id * (expr option)
 | L_str of string
+
+and l_value = {
+    l_value_raw : raw_l_value;
+    mutable l_value_type : typ option;
+}
 
 and cond = 
 | C_true
