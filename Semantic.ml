@@ -97,7 +97,7 @@ let printSymbolTable () =
 
 let funTypeStack = Stack.create ()
 
-let myPrint s = pretty_typ std_formatter s
+
     
 let seman tree =
 
@@ -133,29 +133,50 @@ let seman tree =
             List.iter make_expr func_call_ast.call_expr;
             
             let get_param_typ param_entry = match param_entry.entry_info with 
-                                        | ENTRY_parameter par -> par.parameter_type
-                                        | _ -> fatal "Parameter declaration gone wrong -- Why?"; TYPE_none
+                                        | ENTRY_parameter par -> (par.parameter_type,par.parameter_mode)
+                                        | _ -> fatal "Parameter declaration gone wrong -- Why?"; (TYPE_none,PASS_BY_VALUE)
             in
             let get_actual_param_typ expr_ = match expr_.expr_type with
-                                            | Some ex_type_some -> ex_type_some
-                                            | None -> fatal "Sth gone terribly wrong"; TYPE_none
+                                            | Some ex_type_some -> (ex_type_some,expr_.expr_raw)
+                                            | None -> fatal "Sth gone terribly wrong"; (TYPE_none,E_int 0)
             in
             
             let declared_param_typ_lst = List.map get_param_typ func_entry.function_paramlist in
             let actual_param_typ_lst = List.map get_actual_param_typ func_call_ast.call_expr in
+            
+            let equal_declared_actual (dec_type,dec_mode) (act_type,act_raw) = 
+                match (dec_mode, act_raw) with
+                    | (PASS_BY_VALUE, _) -> equalType dec_type act_type
+                    | (PASS_BY_REFERENCE, E_val _) -> equalType dec_type act_type
+                    | _ -> false
+            in
+            
+            let myPrint_dec (s,info) =
+                pretty_typ std_formatter s;
+                match info with
+                    | PASS_BY_VALUE -> fprintf std_formatter "[PASS_BY_VALUE] "
+                    | PASS_BY_REFERENCE -> fprintf std_formatter "[PASS_BY_REFERENCE] "
+            in
+            
+            let myPrint_act (s,info) =
+                pretty_typ std_formatter s;
+                match info with
+                    | E_val _ -> fprintf std_formatter "[L_value] "
+                    | _ -> fprintf std_formatter "[NOT_L_value] "
+            in
 
             if( ( List.length declared_param_typ_lst = List.length actual_param_typ_lst ) && 
-                ( List.for_all2 equalType declared_param_typ_lst actual_param_typ_lst )
+                ( List.for_all2 equal_declared_actual declared_param_typ_lst actual_param_typ_lst )
               )
             
             then( func_call_ast.return_type <- Some func_entry.function_result )
             
             else(
                 Printf.printf "%s" "Expected parameters: ";
-                List.iter myPrint declared_param_typ_lst;
+                List.iter myPrint_dec declared_param_typ_lst;
                 print_newline ();
                 Printf.printf "%s" "Given parameters:    "; 
-                List.iter myPrint actual_param_typ_lst;
+                List.iter myPrint_act actual_param_typ_lst;
                 print_newline ();
                 fatal "Incorrect argument format" 
             )
@@ -188,7 +209,8 @@ let seman tree =
             | E_op (ex_expr_left, ex_op, ex_expr_right) ->
                 make_expr ex_expr_left;
                 make_expr ex_expr_right;
-                if(ex_expr_left.expr_type = Some TYPE_int && ex_expr_left.expr_type = ex_expr_right.expr_type)
+                
+                if((ex_expr_left.expr_type = Some TYPE_int || ex_expr_left.expr_type = Some TYPE_byte) && ex_expr_left.expr_type = ex_expr_right.expr_type)
                 then(expr_ast.expr_type <- ex_expr_left.expr_type)
                 else(fatal "Type mismatch")
             
@@ -276,8 +298,9 @@ let seman tree =
     in
     
     let make_par f par_ast =
-        ignore (newParameter (id_make par_ast.par_id) par_ast.par_type par_ast.par_pass_way f true);
-        ()
+        match (par_ast.par_type,par_ast.par_pass_way) with
+            | (TYPE_array _, PASS_BY_VALUE) -> fatal "An array cannot be passed by value"
+            | _ -> ignore (newParameter (id_make par_ast.par_id) par_ast.par_type par_ast.par_pass_way f true); ()
     in
     
     let rec make_local local_ast = 

@@ -84,6 +84,6 @@ and comments level = parse
              comments (level+1) lexbuf
            }
     | _ { comments level lexbuf }
-    | eof { (*print_endline "comments are not closed";*)
+    | eof { print_endline "Comments are not closed";
             exit 1
           }
