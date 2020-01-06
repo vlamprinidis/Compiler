@@ -4,7 +4,7 @@ open Types
 open Symbol
 
 let form_expr ex = {expr_raw = ex; expr_type = None;}
-let form_lval lv = {l_value_raw = lv; l_value_type = None;}
+let form_lval lv = {l_value_raw = lv; l_value_type = None; l_value_nesting_scope = 0;}
 %}
 
 %token T_byte
@@ -69,6 +69,7 @@ func_def : T_id T_lparen fpar_list_opt T_rparen T_colon r_type local_def_rep com
         func_type = $6;
         func_local = $7;
         func_stmt = $8;
+        func_nesting_scope = 0;
     }
 }
 

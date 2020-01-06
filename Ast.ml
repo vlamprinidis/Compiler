@@ -44,6 +44,7 @@ type func = {
     func_type : typ;
     func_local : local list;
     func_stmt : stmt list;
+    mutable func_nesting_scope : int;
 }
 
 and par = {
@@ -96,6 +97,7 @@ and raw_l_value =
 and l_value = {
     l_value_raw : raw_l_value;
     mutable l_value_type : typ option;
+    mutable l_value_nesting_scope : int;
 }
 
 and cond = 

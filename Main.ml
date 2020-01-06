@@ -7,6 +7,7 @@ let main =
   try
     let tree = Parser.program Lexer.lexer lexbuf in
     seman tree;
+    
     (*
     let 
         rec loop () =

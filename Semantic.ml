@@ -236,12 +236,17 @@ let seman tree =
                                 (*Check if index is int*)
                                 if( lval_expr_some.expr_type <> Some TYPE_int )
                                 then( fatal "Array index must be an integer" );
-                                l_value_ast.l_value_type <- Some elem_typ
+                                l_value_ast.l_value_type <- Some elem_typ;
+                                (* Nesting *)
+                                l_value_ast.l_value_nesting_scope <- e.entry_scope.sco_nesting;
+                                
                             | _ -> 
                                 fatal "Variable not an array"
                         end
                     | None ->
-                        l_value_ast.l_value_type <- e_typ
+                        l_value_ast.l_value_type <- e_typ;
+                        (* Nesting *)
+                        l_value_ast.l_value_nesting_scope <- e.entry_scope.sco_nesting;
                 end
             | L_str lval_str -> (*String literal = TYPE_array (TYPE_byte,size < 0)*)
                 l_value_ast.l_value_type <- Some TYPE_array (TYPE_byte,-1)
@@ -321,6 +326,9 @@ let seman tree =
         
         let f_SYM = newFunction (id_make f_ast.func_id) true in
         Stack.push f_ast.func_type funTypeStack;
+        (* Nesting *)
+        f_ast.func_nesting_scope <- f_SYM.entry_scope.sco_nesting;
+        
         openScope ();
         
         List.iter (make_par f_SYM) f_ast.func_pars;

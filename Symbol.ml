@@ -157,7 +157,7 @@ let lookupEntry id how err =
     lookup ()
 
 let newVariable id typ err =
-  !currentScope.sco_negofs <- !currentScope.sco_negofs - sizeOfType typ;
+  !currentScope.sco_negofs <- !currentScope.sco_negofs + 1;
   let inf = {
     variable_type = typ;
     variable_offset = !currentScope.sco_negofs
@@ -262,16 +262,11 @@ let endFunctionHeader e typ =
             internal "Cannot end parameters in an already defined function"
         | PARDEF_DEFINE ->
             inf.function_result <- typ;
-            let offset = ref start_positive_offset in
             let fix_offset e =
               match e.entry_info with
               | ENTRY_parameter inf ->
-                  inf.parameter_offset <- !offset;
-                  let size =
-                    match inf.parameter_mode with
-                    | PASS_BY_VALUE     -> sizeOfType inf.parameter_type
-                    | PASS_BY_REFERENCE -> 2 in
-                  offset := !offset + size
+                  inf.parameter_offset <- e.entry_scope.sco_negofs + 1;
+                  e.entry_scope.sco_negofs <- e.entry_scope.sco_negofs + 1
               | _ ->
                   internal "Cannot fix offset to a non parameter" in
             List.iter fix_offset inf.function_paramlist;
