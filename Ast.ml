@@ -41,7 +41,7 @@ type _type =
 type func = {
     func_id : id;
     func_pars : par list;
-    func_type : typ;
+    func_ret_type : typ;
     func_local : local list;
     func_stmt : stmt list;
     mutable func_nesting_scope : int;

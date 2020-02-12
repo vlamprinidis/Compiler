@@ -325,14 +325,14 @@ let seman tree =
     and make_func f_ast =
         
         let f_SYM = newFunction (id_make f_ast.func_id) true in
-        Stack.push f_ast.func_type funTypeStack;
+        Stack.push f_ast.func_ret_type funTypeStack;
         (* Nesting *)
         f_ast.func_nesting_scope <- f_SYM.entry_scope.sco_nesting;
         
         openScope ();
         
         List.iter (make_par f_SYM) f_ast.func_pars;
-        endFunctionHeader f_SYM f_ast.func_type;
+        endFunctionHeader f_SYM f_ast.func_ret_type;
         
         List.iter make_local f_ast.func_local;
         List.iter make_stmt f_ast.func_stmt;
