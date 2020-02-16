@@ -71,15 +71,38 @@ let give_func_lltype func_ast =
 
     func_lltype
 
+let rec set_offsets_in_ast func_ast =
+        let set_pars par_lst idx =
+            begin match par_lst with
+                | par :: tl ->
+                    par.par_frame_offset <- idx;
+                    set_pars tl (idx + 1)
+                | [] -> ()
+            end
+        in
+        set_pars func_ast.func_pars 1;
+        let set_locvars locals_lst idx =
+            begin match locals_lst with
+                | (Local_var locvar) :: tl ->
+                    locvar.locvar_frame_offset <- idx;
+                    set_locvars tl (idx + 1)
+                | (Local_func _) :: tl ->
+                    set_locvars tl idx
+                | [] -> ()
+            end
+        in
+        set_locvars func_ast.func_local ((List.length func_ast.func_pars) + 1)
+
 (* End of helping functions *)
-(* Functions to be created here *)
-let find_func_from_call call_ast = exit 1
 
 let rec codegen_func access_link func_ast =
+    (* Set all offsets in ast -- could have been done in semantic analysis*)
+    set_offsets_in_ast func_ast;
+
     let func_lltype = give_func_lltype func_ast in (*Function lltype *)
     let func_llvalue = define_function func_ast.func_id func_lltype the_module in (* Function llvalue *)
 
-    (* Basic block *)
+    (* Create function basic-block *)
     let f_bb = entry_block func_llvalue in
     position_at_end f_bb builder;
 
@@ -105,36 +128,30 @@ let rec codegen_func access_link func_ast =
             | [] -> ()
         end
     in
-
     let par_llvalue_lst = Array.to_list (params func_llvalue) in
-    let start_of_locals = (List.length par_llvalue_lst) + 1 in (* For later *)
     (* Store starting from position 1 *)
-    store_par_llvalue_lst_to_frame par_llvalue_lst 1;
-
-    (* Create pointer to it *)
-
+    store_par_llvalue_lst_to_frame par_llvalue_lst 1;    
     
-   
-
-    List.iter (codegen_stmt ll_frame) func_ast.func_stmt ;
+    List.iter (codegen_stmt frame_llvalue) func_ast.func_stmt ;
 
 and rec codegen_par par_ast =
 
 and rec codegen_local local_ast = 
 
-and rec codegen_func_call access_link call_ast =
-    let rec give_expr_list =
-        exit 1     
+and rec codegen_func_call frame_llvalue call_ast =
+    let rec give_expr_llvalue_lst expr_lst =
+        begin match expr_lst with
+            | er :: tl -> (codegen_expr frame_llvalue er) :: (give_expr_llvalue_lst tl)
+            | [] -> []
+        end     
     in
 
-    let expr_list = give_expr_list in
+    let expr_llvalue_lst = give_expr_llvalue_lst call_ast.call_expr in
 
-    let expr_arr = Array.of_list expr_list in
+    let expr_arr = Array.of_list expr_llvalue_lst in
     build_call func expr_array "call" builder
 
-    
-
-and rec codegen_stmt ll_frame stmt_ast =
+and rec codegen_stmt frame_llvalue stmt_ast =
     begin match stmt_ast with
         | Null_stmt                 ->
             ()
@@ -142,9 +159,11 @@ and rec codegen_stmt ll_frame stmt_ast =
         | S_assign (lval,er)        ->
 
         | S_comp st_lst             ->
-            List.iter (codegen_stmt ll_frame) st_lst
+            List.iter (codegen_stmt frame_llvalue) st_lst
 
-        | S_call fcall              ->
+        | S_call fcall              -> (* Call to a void function *)
+            ignore (codegen_call frame_llvalue fcall)
+
         | S_if (cnd, st, st_option) ->
             let cond_val = codegen_cond cnd in
 
@@ -220,20 +239,23 @@ and rec codegen_stmt ll_frame stmt_ast =
             position_at_end merge_bb builder
 
         | S_return None             ->
+            ignore (build_ret_void builder)
         | S_return (Some er)        ->
+            let to_return_llvalue = codegen_expr frame_llvalue er in
+            ignore (build_ret to_return_llvalue)
 
 (* TO CHECK THIS -- need to add frame *)
-and rec codegen_expr expr_ast = 
+and rec codegen_expr frame_llvalue expr_ast = 
     begin match expr_ast.expr_raw with
         | E_int n                   -> const_int int_type n
         | E_char c                  -> const_int byte_type c
-        | E_val v                   -> codegen_lval v
-        | E_call cl                 -> codegen_call cl
-        | E_sign (SPlus,er)         -> codegen_expr er
-        | E_sign (SMinus,er)        -> build_neg (codegen_expr er) "neg" builder
+        | E_val v                   -> codegen_lval frame_llvalue v
+        | E_call cl                 -> codegen_call frame_llvalue cl
+        | E_sign (SPlus,er)         -> codegen_expr frame_llvalue er
+        | E_sign (SMinus,er)        -> build_neg (codegen_expr frame_llvalue er) "neg" builder
         | E_op (er1, er_op, er2)    ->
-            let ller1 = codegen_expr er1 in
-            let ller2 = codegen_expr er2 in
+            let ller1 = codegen_expr frame_llvalue er1 in
+            let ller2 = codegen_expr frame_llvalue er2 in
             begin match er_op with
                 | Plus  -> build_add ller1 ller2 "add" builder
                 | Minus -> build_sub ller1 ller2 "sub" builder
@@ -293,7 +315,7 @@ and rec codegen_cond cond_ast =
         | C_false   -> const_int bool_type 0
         | C_not cnd -> build_not (codegen_cond cnd) "not" builder
         | C_compare (er1, cmp_op, er2) -> 
-            build_icmp (give_ll_cmp_op cmp_op (is_expr_signed er1)) (codegen_expr er1) (codegen_expr er2) "icmp" builder
+            build_icmp (give_ll_cmp_op cmp_op (is_expr_signed er1)) (codegen_expr frame_llvalue er1) (codegen_expr frame_llvalue er2) "icmp" builder
         | C_logic (cnd1, lg_op, cnd2) ->
             begin match lg_op with
                 | And ->

@@ -82,7 +82,7 @@ fpar_list : fpar_def fpar_def_rep { $1 :: $2 }
 fpar_def_rep : T_comma fpar_def fpar_def_rep { $2 :: $3 }
 	| /* nothing */ { [] }
           
-fpar_def : T_id T_colon fpar_def_opt par_type { { par_id = $1 ; par_pass_way = $3 ; par_type = $4 ;} }
+fpar_def : T_id T_colon fpar_def_opt par_type { { par_id = $1 ; par_pass_way = $3 ; par_type = $4 ; par_frame_offset = 0 ;} }
 
 fpar_def_opt : T_reference { PASS_BY_REFERENCE }
 	| /* nothing */ { PASS_BY_VALUE }
@@ -103,9 +103,9 @@ local_def_rep: local_def local_def_rep { $1 :: $2 }
 local_def : func_def { Local_func $1 }
 	| var_def { Local_var $1 }
 
-var_def : T_id T_colon data_type T_semi { { var_id = $1 ; var_type = $3 ;} }
+var_def : T_id T_colon data_type T_semi { { var_id = $1 ; var_type = $3 ; locvar_frame_offset = 0;} }
 
-var_def : T_id T_colon data_type T_lbra T_const T_rbra T_semi { { var_id = $1 ; var_type = TYPE_array ($3,$5) ;} }
+var_def : T_id T_colon data_type T_lbra T_const T_rbra T_semi { { var_id = $1 ; var_type = TYPE_array ($3,$5) ; locvar_frame_offset = 0;} }
 
 stmt : T_semi { Null_stmt }
 	| l_value T_assign expr T_semi { S_assign ($1,$3) }

@@ -53,6 +53,7 @@ and par = {
     par_id : id;
     par_pass_way : pass_mode;
     par_type : typ;
+    mutable par_frame_offset : int;
 }
 
 and local = 
@@ -62,6 +63,7 @@ and local =
 and var = {
     var_id : id;
     var_type : typ;
+    mutable locvar_frame_offset : int;
 }
 
 and stmt = 

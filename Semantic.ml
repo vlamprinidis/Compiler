@@ -198,7 +198,8 @@ let seman tree =
                 
             | E_call ex_func_call ->
                 make_call ex_func_call;
-                expr_ast.expr_type <- ex_func_call.return_type
+                expr_ast.expr_type <- ex_func_call.return_type;
+                if( ex_func_call.return_type = TYPE_proc ) then ( fatal "This is an expression and function cannot be a procedure" )
                 
             | E_sign (ex_sign, ex_expr) ->
                 make_expr ex_expr;
@@ -271,7 +272,8 @@ let seman tree =
                 List.iter make_stmt st_stmt_lst
                 
             | S_call st_func_call -> 
-                make_call st_func_call
+                make_call st_func_call;
+                if( st_func_call.return_type <> TYPE_proc ) then ( fatal "This is a statement, function must be a procedure" )
                 
             | S_if (st_cond,st_stmt,st_stmt_opt) ->
                 make_cond st_cond;
