@@ -11,24 +11,128 @@ let builder = builder context
 let int_type = i16_type context (* lltype *)
 let byte_type = i8_type context
 let bool_type = i1_type context
+let proc_type = void_type context
 
-let frame_of_lltypes access_link par_lst locvar_lst = 
-    let arr_of_lltypes = Array.of_list (access_link @ par_lst @ locvar_lst) in
-    struct_type context arr_of_lltypes
+(* Helping functions *)
 
-let give_lltype alan_type = exit 1
-    (* begin match alan_type with
-        | 
-    end *)
+let rec give_lltype alan_type =
+    begin match alan_type with
+        | TYPE_int                          -> int_type
+        | TYPE_byte                         -> byte_type
+        | TYPE_array (elem_type, arr_size)  -> array_type (give_lltype elem_type) arr_size (* element type can only be a basic data type in alan - int or byte *)
+    end
+
+let rec give_fret_lltype alan_type =
+    begin match alan_type with
+        | TYPE_int  -> int_type
+        | TYPE_byte -> byte_type
+        | TYPE_proc -> proc_type
+    end
+
+let rec give_par_lltype_lst par_lst =
+    begin match par_lst with
+        | pr :: tl ->
+            let pr_lltyp = give_lltype pr.par_type in
+            begin match pr.pass_way with
+                | PASS_BY_VALUE     -> pr_lltyp :: (give_par_lltype_lst tl)
+                | PASS_BY_REFERENCE -> (pointer_type pr_lltyp) :: (give_par_lltype_lst tl)
+            end
+        | [] -> []
+    end
+
+let rec give_locvar_lltype_lst loc_lst =
+    begin match loc_lst with
+        | (Local_var vr) :: tl  -> (give_lltype vr.var_type) :: (give_locvar_lltype_lst tl)
+        | (Local_func _) :: tl  -> give_locvar_lltype_lst tl
+        | []                    -> []
+    end
+
+let give_frame_lltype func_ast =
+
+    let par_lltype_lst = give_par_lltype_lst func_ast.func_pars in (* List of parameter lltypes *)
+    let locvar_lltype_lst = give_locvar_lltype_lst func_ast.func_local in (* List of local-variable lltyppes (without local funcs) *)
     
-let rec codegen_func func_ast = 
-    let ll_func_type = exit 1 in (* function_type *)
-    let ll_func = define_function func_ast.func_id ll_func_type the_module in
-    (* Many many work here*)
-    let ll_frame = exit 1 in (* llvalue (llvm struct) *)
-    let bb (*basic block*) = entry_block ll_func in
-    position_at_end bb builder;
+    let access_link_type = pointer_type lltype in
+
+    let arr_of_lltypes = Array.of_list ( access_link_type :: (par_lltype_lst @ locvar_lltype_lst) ) in (* Array of lltypes for frame lltype *)
+    let ll_frame_type = struct_type context arr_of_lltypes in (* Frame lltype (llvm-struct type) *)
+
+    ll_frame_type
+
+let give_func_lltype func_ast =
+
+    let par_lltype_lst = give_par_lltype_lst func_ast.func_pars in (* List of parameter lltypes *)
+    let par_llarr = Array.of_list par_lltype_lst in (* Arrays of the above *)
+    
+    let fret_lltype = give_fret_lltype func_ast.func_ret_type in (* LLtype of function's return value *)
+
+    let func_lltype = function_type par_llarr fret_lltype in (*Function lltype *)
+    (*let func_llvalue = define_function func_ast.func_id func_lltype the_module in (* Function llvalue *)*)
+
+    func_lltype
+
+(* End of helping functions *)
+(* Functions to be created here *)
+let find_func_from_call call_ast = exit 1
+
+let rec codegen_func access_link func_ast =
+    let func_lltype = give_func_lltype func_ast in (*Function lltype *)
+    let func_llvalue = define_function func_ast.func_id func_lltype the_module in (* Function llvalue *)
+
+    (* Basic block *)
+    let f_bb = entry_block func_llvalue in
+    position_at_end f_bb builder;
+
+    (* Create frame *)
+    let frame_type = give_frame_lltype func_ast in
+    let frame_llvalue = build_alloca frame_type "frame" builder in
+
+    let store_at valuetostore_llvalue idx =
+        let element_ptr_llvalue = build_struct_gep frame_llvalue idx "GEP" builder in
+        let _ = build_store valuetostore_llvalue element_ptr_llvalue builder in
+        ()
+    in
+
+    (* Store access_link at 0 position in frame *)
+    store_at access_link 0;
+
+    (* Store each parameter into the frame *)
+    let rec store_par_llvalue_lst_to_frame par_llvalue_lst idx =
+        begin match par_llvalue_lst with
+            | par_llvalue :: tl ->
+                store_at par_llvalue idx;
+                store_par_llvalue_lst_to_frame tl (idx+1)
+            | [] -> ()
+        end
+    in
+
+    let par_llvalue_lst = Array.to_list (params func_llvalue) in
+    let start_of_locals = (List.length par_llvalue_lst) + 1 in (* For later *)
+    (* Store starting from position 1 *)
+    store_par_llvalue_lst_to_frame par_llvalue_lst 1;
+
+    (* Create pointer to it *)
+
+    
+   
+
     List.iter (codegen_stmt ll_frame) func_ast.func_stmt ;
+
+and rec codegen_par par_ast =
+
+and rec codegen_local local_ast = 
+
+and rec codegen_func_call access_link call_ast =
+    let rec give_expr_list =
+        exit 1     
+    in
+
+    let expr_list = give_expr_list in
+
+    let expr_arr = Array.of_list expr_list in
+    build_call func expr_array "call" builder
+
+    
 
 and rec codegen_stmt ll_frame stmt_ast =
     begin match stmt_ast with
@@ -118,6 +222,7 @@ and rec codegen_stmt ll_frame stmt_ast =
         | S_return None             ->
         | S_return (Some er)        ->
 
+(* TO CHECK THIS -- need to add frame *)
 and rec codegen_expr expr_ast = 
     begin match expr_ast.expr_raw with
         | E_int n                   -> const_int int_type n
@@ -126,24 +231,27 @@ and rec codegen_expr expr_ast =
         | E_call cl                 -> codegen_call cl
         | E_sign (SPlus,er)         -> codegen_expr er
         | E_sign (SMinus,er)        -> build_neg (codegen_expr er) "neg" builder
-        | E_op (er1, er_op, er2)    -> 
+        | E_op (er1, er_op, er2)    ->
+            let ller1 = codegen_expr er1 in
+            let ller2 = codegen_expr er2 in
             begin match er_op with
-                | Plus  -> build_add (codegen_expr er1) (codegen_expr er2) "add" builder
-                | Minus -> build_sub (codegen_expr er1) (codegen_expr er2) "sub" builder
-                | Mult  -> build_mul (codegen_expr er1) (codegen_expr er2) "mul" builder
+                | Plus  -> build_add ller1 ller2 "add" builder
+                | Minus -> build_sub ller1 ller2 "sub" builder
+                | Mult  -> build_mul ller1 ller2 "mul" builder
                 | Div   -> 
                     begin match (er1.expr_type, er2.expr_type) with 
-                        | (TYPE_int, TYPE_int)   -> build_sdiv (codegen_expr er1) (codegen_expr er2) "sdiv" builder
-                        | (TYPE_byte, TYPE_byte) -> build_udiv (codegen_expr er1) (codegen_expr er2) "udiv" builder
+                        | (TYPE_int, TYPE_int)   -> build_sdiv ller1 ller2 "sdiv" builder
+                        | (TYPE_byte, TYPE_byte) -> build_udiv ller1 ller2 "udiv" builder
                     end
                 | Mod   -> 
                     begin match (er1.expr_type, er2.expr_type) with 
-                        | (TYPE_int, TYPE_int)   -> build_srem (codegen_expr er1) (codegen_expr er2) "smod" builder
-                        | (TYPE_byte, TYPE_byte) -> build_urem (codegen_expr er1) (codegen_expr er2) "umod" builder
+                        | (TYPE_int, TYPE_int)   -> build_srem ller1 ller2 "smod" builder
+                        | (TYPE_byte, TYPE_byte) -> build_urem ller1 ller2 "umod" builder
                     end
             end 
     end
 
+(* TO COMPLETE THIS *)
 and rec codegen_lval l_value_ast current_frame =
     let find_var id nest_scope = 
 
@@ -156,6 +264,7 @@ and rec codegen_lval l_value_ast current_frame =
         | L_str str                 -> do_str str
     end
 
+(* TO FIX THIS *)
 and rec codegen_cond cond_ast =
     let give_ll_cmp_op alan_op is_signed =
         begin match is_signed, alan_op with

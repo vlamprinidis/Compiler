@@ -1,5 +1,6 @@
 open Types
 open Symbol
+open Llvm
 
 type id = string
 
@@ -45,6 +46,7 @@ type func = {
     func_local : local list;
     func_stmt : stmt list;
     mutable func_nesting_scope : int;
+    mutable func_parent : func option;
 }
 
 and par = {

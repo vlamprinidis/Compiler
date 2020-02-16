@@ -70,6 +70,7 @@ func_def : T_id T_lparen fpar_list_opt T_rparen T_colon r_type local_def_rep com
         func_local = $7;
         func_stmt = $8;
         func_nesting_scope = 0;
+		func_parent = None;
     }
 }
 
