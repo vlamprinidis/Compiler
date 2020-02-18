@@ -177,7 +177,7 @@ and codegen_stmt frame_ptr stmt_ast =
             ignore (codegen_call frame_ptr fcall)
 
         | S_if (cnd, st, st_option) ->
-            let cond_val = codegen_cond cnd in
+            let cond_val = codegen_cond frame_ptr cnd in
 
             (* Grab the first block so that we might later add the conditional branch
             * to it at the end of the function. *)
@@ -234,7 +234,7 @@ and codegen_stmt frame_ptr stmt_ast =
             ignore (build_br while_bb builder);
 
             position_at_end while_bb builder;  
-            let cond_val = codegen_cond cnd in
+            let cond_val = codegen_cond frame_ptr cnd in
             let new_while_bb = insertion_block builder in (* Codegen of 'while' can change the current block *)
             (* Add the conditional branch to either the do-block or the merge-block*)
             position_at_end new_while_bb builder;
@@ -290,7 +290,6 @@ and codegen_lval frame_ptr l_value_ast = (* This will always return a pointer to
 
     begin match l_value_ast.l_value_raw with
         | L_exp (lval_id, None) ->
-
             begin match l_value_ast.is_parameter, l_value_ast.is_local with
                 | true, false -> (* Parameters *)
                     begin match l_value_ast.l_value_type with
@@ -303,7 +302,6 @@ and codegen_lval frame_ptr l_value_ast = (* This will always return a pointer to
                             end
                         | _                             -> fatal "none,params"; llvalue
                     end
-
                 | false, true -> (* Locals *)
                     begin match l_value_ast.l_value_type with
                         | Some (TYPE_array (arr_typ,_)) -> (* Array_type in frame here -- get pointer to the first element of the array *)
@@ -317,7 +315,6 @@ and codegen_lval frame_ptr l_value_ast = (* This will always return a pointer to
             end
 
         | L_exp (lval_id,Some exr) -> (* Only arrays here *)
-
             begin match l_value_ast.is_parameter, l_value_ast.is_local with
                 | true, false -> (* Parameters *)
                     let exr_llvalue = codegen_expr frame_ptr exr in
@@ -338,8 +335,7 @@ and codegen_lval frame_ptr l_value_ast = (* This will always return a pointer to
             build_struct_gep global_str 0 "string as a pointer to the first element of an array of chars" builder
     end
 
-(* TO FIX THIS *)
-and codegen_cond cond_ast =
+and codegen_cond frame_ptr cond_ast =
     let give_ll_cmp_op alan_op is_signed =
         begin match is_signed, alan_op with
             | _, Eq -> Icmp.Eq
@@ -365,14 +361,50 @@ and codegen_cond cond_ast =
     begin match cond_ast with
         | C_true    -> const_int bool_type 1
         | C_false   -> const_int bool_type 0
-        | C_not cnd -> build_not (codegen_cond cnd) "not" builder
+        | C_not cnd -> build_not (codegen_cond frame_ptr cnd) "not" builder
         | C_compare (er1, cmp_op, er2) -> 
             build_icmp (give_ll_cmp_op cmp_op (is_expr_signed er1)) (codegen_expr frame_ptr er1) (codegen_expr frame_ptr er2) "icmp" builder
         | C_logic (cnd1, lg_op, cnd2) ->
+            let start_bb = insertion_block builder in
+            let the_function = block_parent start_bb in
+
+            let middle_bb = append_block context the_function "middle_bb" in
+            let merge_bb  = append_block context the_function "merge_bb"  in
+
+            (* position_at_end start_bb builder; *)
+            let cnd1_llvalue = codegen_cond frame_ptr cnd1 in
+
+            (* Helper function *)
+            let finish new_start_bb middle_llvalue new_middle_bb =
+                position_at_end merge_bb;
+                let phi = build_phi [(cnd1_llvalue, new_start_bb) ; (middle_llvalue, new_middle_bb)] "phi" builder in
+                position_at_end merge_bb;
+                phi
+            in
+            (* End of helper *)
+
             begin match lg_op with
                 | And ->
-                    build_and (codegen_cond cnd1) (codegen_cond cnd2) "and" builder
-                | Or ->
-                    build_or (codegen_cond cnd1) (codegen_cond cnd2) "or" builder
-            end
+                    (* If cnd1 is true then (must compute cnd2) middle_bb else merge_bb *)
+                    build_cond_br cnd1_llvalue middle_bb merge_bb;
+                    let new_start_bb = insertion_block builder in
+
+                    position_at_end middle_bb;
+                    let middle_llvalue = build_and cnd1_llvalue (codegen_cond frame_ptr cnd2) "and" builder in
+                    build_br merge_bb builder;
+                    let new_middle_bb = insertion_block builder in
+
+                    finish new_start_bb middle_llvalue new_middle_bb
+                | Or  ->
+                    (* If cnd1 is true then (no need to compute cnd2) merge_bb else middle_bb *)
+                    build_cond_br cnd1_llvalue merge_bb middle_bb;
+                    let new_start_bb = insertion_block builder in
+
+                    position_at_end middle_bb;
+                    let middle_llvalue = build_or cnd1_llvalue (codegen_cond frame_ptr cnd2) "or" builder in
+                    build_br merge_bb builder;
+                    let new_middle_bb = insertion_block builder in
+
+                    finish new_start_bb middle_llvalue new_middle_bb
+            end            
     end
