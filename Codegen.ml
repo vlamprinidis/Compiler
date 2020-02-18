@@ -82,22 +82,17 @@ let get_Nth_element struct_ptr n str =
     let ptr_to_element = get_ptr_to_Nth_element struct_ptr n str in
     dereference ptr_to_element
 
-(* Note: access_link == first element of a frame (which is a frame_ptr) *)
-
+(* Note: access_link == frame_ptr *)
 let rec get_deep_access_link frame_ptr diff =
-    let get_access_link frame_ptr = 
-        get_Nth_element frame_ptr 0 "access_link" 
-    in
-    let access_link = get_access_link frame_ptr in
-    begin if( diff = 0 ) 
-        then(
-            access_link
-        )
-        else(
-            get_deep_access_link (access_link (diff-1))
-        )
+    if( diff = 0 ) 
+    then begin
+        frame_ptr
     end
-
+    else begin
+        let first_element = get_Nth_element frame_ptr 0 "access_link" in
+        get_deep_access_link (first_element (diff-1))
+    end
+    
 (* End of helping functions *)
 
 let rec codegen_func func_ast =
