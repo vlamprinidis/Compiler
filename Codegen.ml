@@ -105,6 +105,15 @@ let rec codegen_func func_ast =
     let func_lltype = give_func_lltype func_ast in (*Function lltype *)
     let func_llvalue = define_function func_ast.func_id func_lltype the_module in (* Function llvalue *)
 
+    (* Generate code for local functions *)
+    let gen_loc_func loc = 
+        begin match loc with
+            | Local_func loc_func -> codegen_func loc_func
+            | Local_var _         -> ()  
+        end
+    in
+    List.iter gen_loc_func func_ast.func_local;
+
     (* Create function basic-block *)
     let f_bb = entry_block func_llvalue in
     position_at_end f_bb builder;
@@ -115,8 +124,7 @@ let rec codegen_func func_ast =
 
     let store_at valuetostore_llvalue idx =
         let element_ptr_llvalue = build_struct_gep frame_ptr idx "GEP" builder in
-        let _ = build_store valuetostore_llvalue element_ptr_llvalue builder in
-        ()
+        ignore (build_store valuetostore_llvalue element_ptr_llvalue builder)
     in
 
     (* Store each parameter into the frame *)
@@ -132,15 +140,9 @@ let rec codegen_func func_ast =
     (* Store starting from position 0 -- access link is included*)
     store_par_llvalue_lst_to_frame par_llvalue_lst 0;
     
-    (* Generate code for local functions *)
-
-
     (* Generate code for statements *)
     List.iter (codegen_stmt frame_ptr) func_ast.func_stmt ;
 
-and codegen_par par_ast =
-
-and codegen_local local_ast = 
 
 and codegen_func_call frame_ptr call_ast =
     let rec give_expr_llvalue_lst expr_lst =
@@ -150,10 +152,18 @@ and codegen_func_call frame_ptr call_ast =
         end     
     in
 
-    let expr_llvalue_lst = frame_ptr :: (give_expr_llvalue_lst call_ast.call_expr) in
+    (* https://en.wikipedia.org/wiki/Nested_function *)
+    let callee_func = begin match call_ast.callee_func_ast with
+        | Some func_ast -> func_ast
+        | _             -> fatal "callee func ast error"; exit 1
+    end in
+    let diff = call_ast.caller_nesting_scope - callee_func.func_nesting_scope + 1  in
+    let correct_frame = get_deep_access_link frame_ptr diff in
+
+    let expr_llvalue_lst = correct_frame :: (give_expr_llvalue_lst call_ast.call_expr) in
 
     let expr_arr = Array.of_list expr_llvalue_lst in
-    build_call func expr_array "call" builder (* FIX ME *)
+    build_call call_ast.call_id expr_array "call" builder
 
 and codegen_stmt frame_ptr stmt_ast =
     begin match stmt_ast with
@@ -161,6 +171,9 @@ and codegen_stmt frame_ptr stmt_ast =
             ()
 
         | S_assign (lval,exr)        ->
+            let exr_llvalue = codegen_expr frame_ptr exr in
+            let element_ptr = codegen_lval frame_ptr lval in
+            ignore (build_store exr_llvalue element_ptr builder)
 
         | S_comp st_lst             ->
             List.iter (codegen_stmt frame_ptr) st_lst
@@ -279,8 +292,10 @@ and codegen_expr frame_ptr expr_ast =
 
 and codegen_lval frame_ptr l_value_ast = (* This will always return a pointer to an element *)
     let correct_frame = get_deep_access_link frame_ptr l_value_ast.l_value_nesting_diff in
+
     begin match l_value_ast.l_value_raw with
         | L_exp (lval_id, None) ->
+
             begin match l_value_ast.is_parameter, l_value_ast.is_local with
                 | true, false -> (* Parameters *)
                     begin match l_value_ast.l_value_type with
@@ -293,6 +308,7 @@ and codegen_lval frame_ptr l_value_ast = (* This will always return a pointer to
                             end
                         | _                             -> fatal "none,params"; llvalue
                     end
+
                 | false, true -> (* Locals *)
                     begin match l_value_ast.l_value_type with
                         | Some (TYPE_array (arr_typ,_)) -> (* Array_type in frame here -- get pointer to the first element of the array *)
@@ -306,6 +322,7 @@ and codegen_lval frame_ptr l_value_ast = (* This will always return a pointer to
             end
 
         | L_exp (lval_id,Some exr) -> (* Only arrays here *)
+
             begin match l_value_ast.is_parameter, l_value_ast.is_local with
                 | true, false -> (* Parameters *)
                     let exr_llvalue = codegen_expr frame_ptr exr in

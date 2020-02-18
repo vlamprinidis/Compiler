@@ -96,30 +96,7 @@ let printSymbolTable () =
     scope !currentScope
 
 let funTypeStack = Stack.create ()
-
-let set_offsets_in_frame func_ast =
-    let set_pars par_lst idx =
-        begin match par_lst with
-            | par :: tl ->
-                par.par_frame_offset <- idx;
-                set_pars tl (idx + 1)
-            | [] -> ()
-        end
-    in
-    set_pars func_ast.func_pars 1;
-    let set_locvars locals_lst idx =
-        begin match locals_lst with
-            | (Local_var locvar) :: tl ->
-                locvar.locvar_frame_offset <- idx;
-                set_locvars tl (idx + 1)
-            | (Local_func _) :: tl ->
-                set_locvars tl idx
-            | [] -> ()
-        end
-    in
-    set_locvars func_ast.func_local ((List.length func_ast.func_pars) + 1)
-
-    
+   
 let seman tree =
 
     (* help funcs *)
@@ -151,6 +128,9 @@ let seman tree =
         let e = lookupEntry (id_make func_call_ast.call_id) LOOKUP_ALL_SCOPES true in
         begin match e.entry_info with
         | ENTRY_function func_entry ->
+            func_call_ast.callee_func_ast      <- func_entry.function_func_ast;
+            func_call_ast.caller_nesting_scope <- !currentScope.sco_nesting - 1;
+
             List.iter make_expr func_call_ast.call_expr;
             
             let get_param_typ param_entry = match param_entry.entry_info with 
@@ -356,6 +336,10 @@ let seman tree =
     and make_func f_ast =
         
         let f_SYM = newFunction (id_make f_ast.func_id) true in
+        begin match f_SYM.entry_info with
+            | ENTRY_function func_info -> func_info.function_func_ast <- f_ast;
+            | _                        -> fatal "entry must have been function_entry, ??";
+        end
         Stack.push f_ast.func_ret_type funTypeStack;
         (* Nesting *)
         f_ast.func_nesting_scope <- f_SYM.entry_scope.sco_nesting;
@@ -364,9 +348,16 @@ let seman tree =
         
         List.iter (make_par f_SYM) f_ast.func_pars;
         endFunctionHeader f_SYM f_ast.func_ret_type;
-        List.iter make_local f_ast.func_local;
 
-        set_offsets_in_frame func_ast;
+        let set_full_name loc = 
+            begin match loc with
+                | Local_func loc_func -> 
+                    loc_func.full_name   <- String.concat "#" [f_ast.full_name, loc_func.func_id]
+                | Local_var _         -> ()
+            end
+        in
+        List.iter set_full_name f_ast.func_local;
+        List.iter make_local f_ast.func_local;
 
         List.iter make_stmt f_ast.func_stmt;
         

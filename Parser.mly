@@ -64,13 +64,13 @@ program   : func_def T_eof { $1 }
 
 func_def : T_id T_lparen fpar_list_opt T_rparen T_colon r_type local_def_rep compound_stmt { 
     {   
-        func_id = $1;
-        func_pars = $3;
-        func_ret_type = $6;
-        func_local = $7;
-        func_stmt = $8;
-        func_nesting_scope = 0;
-		func_parent = None;
+			full_name = $1;
+			func_id = $1;
+			func_pars = $3;
+			func_ret_type = $6;
+			func_local = $7;
+			func_stmt = $8;
+			func_nesting_scope = 0;
     }
 }
 
@@ -124,7 +124,7 @@ compound_stmt : T_lcurl stmt_rep T_rcurl { $2 }
 stmt_rep : stmt stmt_rep { $1 :: $2 }
 	| /* nothing */ { [] }
 
-func_call : T_id T_lparen expr_list_opt T_rparen { { call_id = $1 ; call_expr = $3 ; return_type = None ; } }
+func_call : T_id T_lparen expr_list_opt T_rparen { { call_id = $1 ; call_expr = $3 ; return_type = None ; callee_func_ast = None; caller_nesting_scope = 0; } }
 
 expr_list_opt : expr_list { $1 }
 	| /* nothing */ { [] }

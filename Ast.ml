@@ -40,13 +40,13 @@ type _type =
 *)
 
 type func = {
+    mutable full_name : id;
     func_id : id;
     func_pars : par list;
     func_ret_type : typ;
     func_local : local list;
     func_stmt : stmt list;
     mutable func_nesting_scope : int;
-    mutable func_parent : func option;
 }
 
 and par = {
@@ -79,6 +79,8 @@ and func_call = {
     call_id : id;
     call_expr : expr list;
     mutable return_type : typ option;
+    mutable callee_func_ast : func option;
+    mutable caller_nesting_scope : int;
 }
 
 and raw_expr = 

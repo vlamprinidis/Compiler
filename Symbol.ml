@@ -1,6 +1,7 @@
 open Identifier
 open Error
 open Types
+open Ast
 
 module H = Hashtbl.Make (
   struct
@@ -35,7 +36,8 @@ and function_info = {
   mutable function_redeflist : entry list;
   mutable function_result    : Types.typ;
   mutable function_pstatus   : param_status;
-  mutable function_initquad  : int
+  mutable function_initquad  : int;
+  mutable function_func_ast  : Ast.func_ast option;
 }
 
 and parameter_info = {
@@ -184,7 +186,8 @@ let newFunction id err =
       function_redeflist = [];
       function_result = TYPE_none;
       function_pstatus = PARDEF_DEFINE;
-      function_initquad = 0
+      function_initquad = 0;
+      function_func_ast = None;
     } in
     newEntry id (ENTRY_function inf) false
 
