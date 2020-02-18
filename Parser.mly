@@ -4,7 +4,7 @@ open Types
 open Symbol
 
 let form_expr ex = {expr_raw = ex; expr_type = None;}
-let form_lval lv = {l_value_raw = lv; l_value_type = None; l_value_nesting_scope = 0;}
+let form_lval lv = {l_value_raw = lv; l_value_type = None; l_value_nesting_diff = -1; offset = -1; is_reference = false; is_parameter = false; is_local = false; }
 %}
 
 %token T_byte

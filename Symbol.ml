@@ -64,7 +64,7 @@ and entry = {
 type lookup_type = LOOKUP_CURRENT_SCOPE | LOOKUP_ALL_SCOPES
 
 let start_positive_offset = 8
-let start_negative_offset = 0
+let start_negative_offset = 1 (* Because access link is in position 0 in the frame *)
 
 let the_outer_scope = {
   sco_parent = None;

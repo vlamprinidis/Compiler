@@ -97,6 +97,27 @@ let printSymbolTable () =
 
 let funTypeStack = Stack.create ()
 
+let set_offsets_in_frame func_ast =
+    let set_pars par_lst idx =
+        begin match par_lst with
+            | par :: tl ->
+                par.par_frame_offset <- idx;
+                set_pars tl (idx + 1)
+            | [] -> ()
+        end
+    in
+    set_pars func_ast.func_pars 1;
+    let set_locvars locals_lst idx =
+        begin match locals_lst with
+            | (Local_var locvar) :: tl ->
+                locvar.locvar_frame_offset <- idx;
+                set_locvars tl (idx + 1)
+            | (Local_func _) :: tl ->
+                set_locvars tl idx
+            | [] -> ()
+        end
+    in
+    set_locvars func_ast.func_local ((List.length func_ast.func_pars) + 1)
 
     
 let seman tree =
@@ -219,15 +240,26 @@ let seman tree =
         match l_value_ast.l_value_raw with
             | L_exp (lval_id, lval_expr_opt) ->
                 let e = lookupEntry (id_make lval_id) LOOKUP_ALL_SCOPES true in
+                l_value_ast.l_value_nesting_diff <- ( !currentScope.sco_nesting - e.entry_scope.sco_nesting );
+
                 let e_typ = match e.entry_info with
                     | ENTRY_variable var_info ->
+                        l_value_ast.offset <- var_info.variable_offset;
+                        l_value_ast.is_local <- true;
                         Some var_info.variable_type
                     | ENTRY_parameter par_info ->
+                        l_value_ast.offset <- par_info.parameter_offset;
+                        begin match par_info.parameter_mode with
+                            | PASS_BY_REFERENCE -> l_value_ast.is_reference <- true;
+                            | _                 -> l_value_ast.is_reference <- false;
+                        end
+                        l_value_ast.is_parameter <- true;
                         Some par_info.parameter_type
                     | _ -> 
                         fatal "Identifier not valid";
                         None
                 in
+
                 begin match lval_expr_opt with
                     | Some lval_expr_some -> 
                         (*Check if not array*)
@@ -237,18 +269,15 @@ let seman tree =
                                 (*Check if index is int*)
                                 if( lval_expr_some.expr_type <> Some TYPE_int )
                                 then( fatal "Array index must be an integer" );
-                                l_value_ast.l_value_type <- Some elem_typ;
-                                (* Nesting *)
-                                l_value_ast.l_value_nesting_scope <- e.entry_scope.sco_nesting;
+                                l_value_ast.l_value_type <- Some elem_typ                                
                                 
                             | _ -> 
                                 fatal "Variable not an array"
                         end
                     | None ->
-                        l_value_ast.l_value_type <- e_typ;
-                        (* Nesting *)
-                        l_value_ast.l_value_nesting_scope <- e.entry_scope.sco_nesting;
+                        l_value_ast.l_value_type <- e_typ
                 end
+                
             | L_str lval_str -> (*String literal = TYPE_array (TYPE_byte,size < 0)*)
                 l_value_ast.l_value_type <- Some TYPE_array (TYPE_byte,-1)
     in
@@ -335,8 +364,10 @@ let seman tree =
         
         List.iter (make_par f_SYM) f_ast.func_pars;
         endFunctionHeader f_SYM f_ast.func_ret_type;
-        
         List.iter make_local f_ast.func_local;
+
+        set_offsets_in_frame func_ast;
+
         List.iter make_stmt f_ast.func_stmt;
         
         (* printSymbolTable (); *)
