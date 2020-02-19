@@ -22,6 +22,7 @@ let rec give_lltype alan_type =
         | TYPE_int                          -> int_type
         | TYPE_byte                         -> byte_type
         | TYPE_array (elem_type, arr_size)  -> array_type (give_lltype elem_type) arr_size (* element type can only be a basic data type in alan - int or byte *)
+        | _ -> fatal "alan to lltype didn't work"; raise Terminate
     end
 
 let rec give_fret_lltype alan_type =
@@ -29,6 +30,7 @@ let rec give_fret_lltype alan_type =
         | TYPE_int  -> int_type
         | TYPE_byte -> byte_type
         | TYPE_proc -> proc_type
+        | _ -> fatal "alan to return type didn't work"; raise Terminate
     end
 
 let rec give_par_lltype_lst par_lst =
@@ -287,11 +289,13 @@ and codegen_expr frame_ptr expr_ast =
                     begin match (er1.expr_type, er2.expr_type) with 
                         | (Some TYPE_int, Some TYPE_int)   -> build_sdiv ller1 ller2 "sdiv" builder
                         | (Some TYPE_byte, Some TYPE_byte) -> build_udiv ller1 ller2 "udiv" builder
+                        | _ -> fatal "exprgen div, type mismatch"; raise Terminate
                     end
                 | Mod   -> 
                     begin match (er1.expr_type, er2.expr_type) with 
                         | (Some TYPE_int, Some TYPE_int)   -> build_srem ller1 ller2 "smod" builder
                         | (Some TYPE_byte, Some TYPE_byte) -> build_urem ller1 ller2 "umod" builder
+                        | _ -> fatal "exprgen mod, type mismatch"; raise Terminate
                     end
             end 
     end
@@ -367,6 +371,7 @@ and codegen_cond frame_ptr cond_ast =
         begin match exr.expr_type with
             | Some TYPE_int     -> true
             | Some TYPE_byte    -> false
+            | _ -> fatal "is_expr_signed: type is not int or byte"; raise Terminate
         end
     in
     begin match cond_ast with
