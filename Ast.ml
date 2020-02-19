@@ -1,7 +1,8 @@
 open Types
 open Symbol
+open Llvm
 
-type id_st = string
+type my_id = string
 
 (* type reference = Is_ref | Not_ref *)
 
@@ -39,17 +40,19 @@ type _type =
 *)
 
 type func = {
-    mutable full_name : id_st;
-    func_id : id_st;
+    mutable full_name : my_id;
+    func_id : my_id;
     func_pars : par list;
     func_ret_type : typ;
     func_local : local list;
     func_stmt : stmt list;
     mutable func_nesting_scope : int;
+    mutable parent : func option;
+    mutable frame_type : lltype option;
 }
 
 and par = {
-    par_id : id_st;
+    par_id : my_id;
     par_pass_way : pass_mode;
     par_type : typ;
 }
@@ -59,7 +62,7 @@ and local =
 | Local_var of var
 
 and var = {
-    var_id : id_st;
+    var_id : my_id;
     var_type : typ;
 }
 
@@ -67,16 +70,16 @@ and stmt =
 | Null_stmt
 | S_assign of l_value * expr
 | S_comp of stmt list
-| S_call of func_call
+| S_call of call
 | S_if of cond * stmt * (stmt option)
 | S_while of cond * stmt
 | S_return of expr option
 
-and func_call = {
-    call_id : id_st;
+and call = {
+    call_id : my_id;
     call_expr : expr list;
     mutable return_type : typ option;
-    mutable callee_full_name : id_st option;
+    mutable callee_full_name : my_id option;
     mutable callee_scope : int;
     mutable caller_nesting_scope : int;
 }
@@ -85,7 +88,7 @@ and raw_expr =
 | E_int of int
 | E_char of char
 | E_val of l_value
-| E_call of func_call
+| E_call of call
 | E_sign of sign * expr
 | E_op of expr * op * expr
 
@@ -95,7 +98,7 @@ and expr = {
 }
 
 and raw_l_value = 
-| L_exp of id_st * (expr option)
+| L_id of my_id * (expr option)
 | L_str of string
 
 and l_value = {

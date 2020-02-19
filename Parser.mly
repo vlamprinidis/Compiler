@@ -71,6 +71,8 @@ func_def : T_id T_lparen fpar_list_opt T_rparen T_colon r_type local_def_rep com
 			func_local = $7;
 			func_stmt = $8;
 			func_nesting_scope = 0;
+			parent = None;
+			frame_type = None;
     }
 }
 
@@ -148,7 +150,7 @@ expr : T_const { form_expr (E_int $1) }
 	| T_plus expr %prec uplus { form_expr ( E_sign (SPlus, $2) ) }
 	| T_minus expr %prec uminus { form_expr ( E_sign (SMinus, $2) ) }
 
-l_value : T_id expr_opt { form_lval ( L_exp ($1, $2) ) }
+l_value : T_id expr_opt { form_lval ( L_id ($1, $2) ) }
 	| T_string { form_lval ( L_str $1 ) }
 	
 expr_opt : T_lbra expr T_rbra { Some $2 }
