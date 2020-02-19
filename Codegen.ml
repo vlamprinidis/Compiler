@@ -148,8 +148,9 @@ let rec codegen_func func_ast =
     store_par_llvalue_lst_to_frame par_llvalue_lst 0;
     
     (* Generate code for statements *)
-    List.iter (codegen_stmt frame_ptr) func_ast.func_stmt ;
-
+    ignore ( List.fold_left (codegen_stmt_until frame_ptr) false func_ast.func_stmt )
+    
+    (* List.iter (codegen_stmt frame_ptr) func_ast.func_stmt ; *)
 
 and codegen_call frame_ptr call_ast =
     let rec give_expr_llvalue_lst expr_lst = match expr_lst with
@@ -192,21 +193,28 @@ and codegen_call frame_ptr call_ast =
 
     build_call callee_func_llvalue expr_arr "call" builder
 
-and codegen_stmt frame_ptr stmt_ast =
+and codegen_stmt_until frame_ptr previous_stmt_is_terminator st  = (* returns true if terminal *)
+    previous_stmt_is_terminator || codegen_stmt frame_ptr st
+
+and codegen_stmt frame_ptr stmt_ast = (* returns true if terminal *)
     begin match stmt_ast with
         | Null_stmt                 ->
-            ()
+            false
 
         | S_assign (lval,exr)        ->
             let exr_llvalue = codegen_expr frame_ptr exr in
             let element_ptr = codegen_lval frame_ptr lval in
-            ignore (build_store exr_llvalue element_ptr builder)
+            ignore (build_store exr_llvalue element_ptr builder);
+            false
 
         | S_comp st_lst             ->
-            List.iter (codegen_stmt frame_ptr) st_lst
+            List.fold_left (codegen_stmt_until frame_ptr) false st_lst
+            
+            (* List.iter (codegen_stmt frame_ptr) st_lst; *)
 
         | S_call fcall              -> (* Call to a void function *)
-            ignore (codegen_call frame_ptr fcall)
+            ignore (codegen_call frame_ptr fcall);
+            false
 
         | S_if (cnd, st, st_option) ->
         (* http://llvm.org/docs/tutorial/OCamlLangImpl5.html *)
@@ -221,37 +229,50 @@ and codegen_stmt frame_ptr stmt_ast =
             let merge_bb = append_block context "ifcont" the_function in
 
             position_at_end then_bb builder;
-            ignore (codegen_stmt frame_ptr st);
+            let then_stmt_is_terminal = codegen_stmt frame_ptr st in
             let new_then_bb = insertion_block builder in (* Codegen of 'then' can change the current block *)
 
-            (* Set an unconditional branch at the end of the then-block to the merge-block *)
-            position_at_end new_then_bb builder; ignore (build_br merge_bb builder);
+            if(not then_stmt_is_terminal)
+            then begin
+                (* Set an unconditional branch at the end of the then-block to the merge-block *)
+                position_at_end new_then_bb builder; 
+                ignore (build_br merge_bb builder)
+            end ;
 
             let _ = match st_option with
                 | Some st_some ->
                     let else_bb = append_block context "else" the_function in
 
                     position_at_end else_bb builder;
-                    ignore (codegen_stmt frame_ptr st_some);
+                    let else_stmt_is_terminal = codegen_stmt frame_ptr st_some in
                     let new_else_bb = insertion_block builder in
 
-                    (* Set an unconditional branch at the end of the else-block to the merge-block*)
-                    position_at_end new_else_bb builder; 
-                    ignore (build_br merge_bb builder);
-                    
+                    if( not else_stmt_is_terminal)
+                    then begin
+                        (* Set an unconditional branch at the end of the else-block to the merge-block*)
+                        position_at_end new_else_bb builder; 
+                        ignore (build_br merge_bb builder)
+                    end;
+
                     (* Return to the end of the start-block to add the conditional branch *)
                     position_at_end start_bb builder;
                     ignore ( build_cond_br cond_val then_bb else_bb builder )
+                    
+                    (* position_at_end merge_bb builder; *)
+                    (* then_stmt_is_terminal && else_stmt_is_terminal *)
 
                 | None ->
                     (* Return to the end of the start-block to add the conditional branch *)
                     position_at_end start_bb builder;
                     ignore ( build_cond_br cond_val then_bb merge_bb builder )
 
+                    (* position_at_end merge_bb builder; *)
+                    (* false *)
+
             in
             (* Finally, set the builder to the end of the merge-block *)
             position_at_end merge_bb builder;
-            ()
+            false
 
         | S_while (cnd, st)          ->
             (* Grab the first block so that we later add the unconditional branch
@@ -275,20 +296,29 @@ and codegen_stmt frame_ptr stmt_ast =
             ignore (build_cond_br cond_val do_bb merge_bb builder);      
 
             position_at_end do_bb builder;
-            ignore (codegen_stmt frame_ptr st);
+            let while_st_is_terminator = codegen_stmt frame_ptr st in
             let new_do_bb = insertion_block builder in (* Codegen of 'do' can change the current block *)
-            (* Set an unconditional branch to the start of the while-block *)
-            position_at_end new_do_bb builder; 
-            ignore (build_br while_bb builder);
+            
+            if (not while_st_is_terminator) then 
+            begin
+                (* Set an unconditional branch to the start of the while-block *)
+                position_at_end new_do_bb builder; 
+                ignore (build_br while_bb builder)
+            end;
 
             (* Finally, set the builder to the end of the merge-block. *)
-            position_at_end merge_bb builder
+            position_at_end merge_bb builder;
+
+            false
 
         | S_return None             ->
-            ignore (build_ret_void builder)
+            ignore (build_ret_void builder);
+            true
+
         | S_return (Some exr)        ->
             let to_return_llvalue = codegen_expr frame_ptr exr in
-            ignore (build_ret to_return_llvalue builder)
+            ignore (build_ret to_return_llvalue builder);
+            true
     end
 
 and codegen_expr frame_ptr expr_ast = 
