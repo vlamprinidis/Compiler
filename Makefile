@@ -1,6 +1,6 @@
 EXEFILE=alan
 MLFILES=Hashcons.ml Identifier.ml Error.ml Types.ml Symbol.ml \
-  Ast.ml Semantic.ml Lexer.ml Parser.ml Main.ml
+  Ast.ml Semantic.ml Lexer.ml Parser.ml Codegen.ml Main.ml
 MLIFILES=Hashcons.mli Identifier.mli Error.mli Types.mli Symbol.mli \
   Parser.mli
 CMOFILES=$(patsubst %.ml,%.cmo,$(MLFILES))
@@ -19,6 +19,7 @@ OCAMLC=ocamlc $(OCAMLC_FLAGS)
 OCAMLOPT=ocamlopt $(OCAMLOPT_FLAGS)
 OCAMLDEP=ocamldep
 INCLUDES=
+LLVM_PACKAGES=-package llvm
 
 default: alan
 
@@ -35,10 +36,10 @@ extend.cmo: extend.ml
 	$(OCAMLC) $(CAMLP5_FLAGS) -c $<
 
 %.cmo %.cmi: %.ml extend.cmo
-	$(OCAMLC) $(CAMLP5_FLAGS) -c $<
+	ocamlfind $(OCAMLC) $(CAMLP5_FLAGS) $(LLVM_PACKAGES) -c $<
 
 $(EXEFILE): Parser.mli Lexer.ml $(CMOFILES)
-	$(OCAMLC) -o $@ $(CMOFILES)
+	ocamlfind $(OCAMLC) $(LLVM_PACKAGES) -linkpkg -o $@ $(CMOFILES)
 
 Lexer.ml: Lexer.mll
 	ocamllex -o $@ $<

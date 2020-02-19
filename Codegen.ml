@@ -1,6 +1,8 @@
 open Llvm
 open Ast
 open Error
+open Types
+open Symbol
 
 exception Error of string
 
@@ -32,7 +34,7 @@ let rec give_fret_lltype alan_type =
 let rec give_par_lltype_lst par_lst =
     begin match par_lst with
         | pr :: tl ->
-            begin match pr.pass_way with
+            begin match pr.par_pass_way with
                 | PASS_BY_VALUE     -> (give_lltype pr.par_type) :: (give_par_lltype_lst tl)
                 | PASS_BY_REFERENCE -> 
                     begin match pr.par_type with
@@ -55,7 +57,8 @@ let give_frame_lltype func_ast =
     let par_lltype_lst = give_par_lltype_lst func_ast.func_pars in (* List of parameter lltypes *)
     let locvar_lltype_lst = give_locvar_lltype_lst func_ast.func_local in (* List of local-variable lltyppes (without local funcs) *)
     
-    let access_link_type = pointer_type lltype in
+    (* FIX ME*)
+    let access_link_type = pointer_type int_type in 
 
     let arr_of_lltypes = Array.of_list ( access_link_type :: (par_lltype_lst @ locvar_lltype_lst) ) in (* Array of lltypes for frame lltype *)
     let ll_frame_type = struct_type context arr_of_lltypes in (* Frame lltype (llvm-struct type) *)
@@ -69,7 +72,7 @@ let give_func_lltype func_ast =
     
     let fret_lltype = give_fret_lltype func_ast.func_ret_type in (* LLtype of function's return value *)
 
-    let func_lltype = function_type par_llarr fret_lltype in (*Function lltype *)
+    let func_lltype = function_type fret_lltype par_llarr in (*Function lltype *)
     (*let func_llvalue = define_function func_ast.func_id func_lltype the_module in (* Function llvalue *)*)
 
     func_lltype
@@ -90,7 +93,7 @@ let rec get_deep_access_link frame_ptr diff =
     end
     else begin
         let first_element = get_Nth_element frame_ptr 0 "access_link" in
-        get_deep_access_link (first_element (diff-1))
+        get_deep_access_link first_element (diff-1)
     end
     
 (* End of helping functions *)
@@ -98,7 +101,9 @@ let rec get_deep_access_link frame_ptr diff =
 let rec codegen_func func_ast =
     
     let func_lltype = give_func_lltype func_ast in (*Function lltype *)
-    let func_llvalue = define_function func_ast.func_id func_lltype the_module in (* Function llvalue *)
+    let func_llvalue = define_function func_ast.full_name func_lltype the_module in (* Function llvalue *)
+
+    let frame_type = give_frame_lltype func_ast in
 
     (* Generate code for local functions *)
     let gen_loc_func loc = 
@@ -114,7 +119,6 @@ let rec codegen_func func_ast =
     position_at_end f_bb builder;
 
     (* Create frame *)
-    let frame_type = give_frame_lltype func_ast in
     let frame_ptr = build_alloca frame_type "frame" builder in
 
     let store_at valuetostore_llvalue idx =
@@ -148,17 +152,22 @@ and codegen_func_call frame_ptr call_ast =
     in
 
     (* https://en.wikipedia.org/wiki/Nested_function *)
-    let callee_func = begin match call_ast.callee_func_ast with
-        | Some func_ast -> func_ast
-        | _             -> fatal "callee func ast error"; exit 1
+    let callee_full_name = begin match call_ast.callee_full_name with
+        | Some name -> name
+        | _         -> fatal "callee func ast full name error"; exit 1
     end in
-    let diff = call_ast.caller_nesting_scope - callee_func.func_nesting_scope + 1  in
+    let diff = call_ast.caller_nesting_scope - call_ast.callee_scope + 1  in
     let correct_frame = get_deep_access_link frame_ptr diff in
 
     let expr_llvalue_lst = correct_frame :: (give_expr_llvalue_lst call_ast.call_expr) in
 
     let expr_arr = Array.of_list expr_llvalue_lst in
-    build_call call_ast.call_id expr_array "call" builder
+
+    let callee_func_llvalue = begin match (lookup_function callee_full_name the_module) with
+        | Some fn   -> fn
+        | _         -> fatal "Function not found"; raise Terminate
+    end in
+    build_call callee_func_llvalue expr_arr "call" builder
 
 and codegen_stmt frame_ptr stmt_ast =
     begin match stmt_ast with
@@ -174,7 +183,7 @@ and codegen_stmt frame_ptr stmt_ast =
             List.iter (codegen_stmt frame_ptr) st_lst
 
         | S_call fcall              -> (* Call to a void function *)
-            ignore (codegen_call frame_ptr fcall)
+            ignore (codegen_func_call frame_ptr fcall)
 
         | S_if (cnd, st, st_option) ->
             let cond_val = codegen_cond frame_ptr cnd in
@@ -188,18 +197,18 @@ and codegen_stmt frame_ptr stmt_ast =
             let merge_bb = append_block context "ifcont" the_function in
 
             position_at_end then_bb builder;
-            ignore (codegen_stmt st);
+            ignore (codegen_stmt frame_ptr st);
             let new_then_bb = insertion_block builder in (* Codegen of 'then' can change the current block *)
 
             (* Set an unconditional branch at the end of the then-block to the merge-block *)
             position_at_end new_then_bb builder; ignore (build_br merge_bb builder);
 
-            begin match st_option with
+            let _ = begin match st_option with
                 | Some st_some ->
                     let else_bb = append_block context "else" the_function in
 
                     position_at_end else_bb builder;
-                    ignore (codegen_stmt st_some);
+                    ignore (codegen_stmt frame_ptr st_some);
                     let new_else_bb = insertion_block builder in
 
                     (* Set an unconditional branch at the end of the else-block to the merge-block*)
@@ -208,16 +217,17 @@ and codegen_stmt frame_ptr stmt_ast =
                     
                     (* Return to the end of the start-block to add the conditional branch *)
                     position_at_end start_bb builder;
-                    ignore (build_cond_br cond_val then_bb else_bb builder);
+                    ignore ( build_cond_br cond_val then_bb else_bb builder )
 
                 | None ->
                     (* Return to the end of the start-block to add the conditional branch *)
                     position_at_end start_bb builder;
-                    ignore (build_cond_br cond_val then_bb merge_bb builder);
+                    ignore ( build_cond_br cond_val then_bb merge_bb builder )
 
-            end
+            end in
             (* Finally, set the builder to the end of the merge-block *)
-            position_at_end merge_bb builder
+            position_at_end merge_bb builder;
+            ()
 
         | S_while (cnd, st)          ->
             (* Grab the first block so that we later add the unconditional branch
@@ -241,7 +251,7 @@ and codegen_stmt frame_ptr stmt_ast =
             ignore (build_cond_br cond_val do_bb merge_bb builder);      
 
             position_at_end do_bb builder;
-            ignore (codegen_stmt st);
+            ignore (codegen_stmt frame_ptr st);
             let new_do_bb = insertion_block builder in (* Codegen of 'do' can change the current block *)
             (* Set an unconditional branch to the start of the while-block *)
             position_at_end new_do_bb builder; 
@@ -254,15 +264,16 @@ and codegen_stmt frame_ptr stmt_ast =
             ignore (build_ret_void builder)
         | S_return (Some exr)        ->
             let to_return_llvalue = codegen_expr frame_ptr exr in
-            ignore (build_ret to_return_llvalue)
+            ignore (build_ret to_return_llvalue builder)
+    end
 
 (* TO CHECK THIS -- need to add frame *)
 and codegen_expr frame_ptr expr_ast = 
     begin match expr_ast.expr_raw with
         | E_int n                   -> const_int int_type n
-        | E_char c                  -> const_int byte_type c
+        | E_char c                  -> const_int byte_type (Char.code c)
         | E_val v                   -> dereference (codegen_lval frame_ptr v)
-        | E_call cl                 -> codegen_call frame_ptr cl
+        | E_call cl                 -> codegen_func_call frame_ptr cl
         | E_sign (SPlus,exr)        -> codegen_expr frame_ptr exr
         | E_sign (SMinus,exr)       -> build_neg (codegen_expr frame_ptr exr) "neg" builder
         | E_op (er1, er_op, er2)    ->
@@ -274,13 +285,13 @@ and codegen_expr frame_ptr expr_ast =
                 | Mult  -> build_mul ller1 ller2 "mul" builder
                 | Div   -> 
                     begin match (er1.expr_type, er2.expr_type) with 
-                        | (TYPE_int, TYPE_int)   -> build_sdiv ller1 ller2 "sdiv" builder
-                        | (TYPE_byte, TYPE_byte) -> build_udiv ller1 ller2 "udiv" builder
+                        | (Some TYPE_int, Some TYPE_int)   -> build_sdiv ller1 ller2 "sdiv" builder
+                        | (Some TYPE_byte, Some TYPE_byte) -> build_udiv ller1 ller2 "udiv" builder
                     end
                 | Mod   -> 
                     begin match (er1.expr_type, er2.expr_type) with 
-                        | (TYPE_int, TYPE_int)   -> build_srem ller1 ller2 "smod" builder
-                        | (TYPE_byte, TYPE_byte) -> build_urem ller1 ller2 "umod" builder
+                        | (Some TYPE_int, Some TYPE_int)   -> build_srem ller1 ller2 "smod" builder
+                        | (Some TYPE_byte, Some TYPE_byte) -> build_urem ller1 ller2 "umod" builder
                     end
             end 
     end
@@ -300,7 +311,7 @@ and codegen_lval frame_ptr l_value_ast = (* This will always return a pointer to
                                 | true  -> get_Nth_element correct_frame l_value_ast.offset lval_id
                                 | false -> get_ptr_to_Nth_element correct_frame l_value_ast.offset lval_id
                             end
-                        | _                             -> fatal "none,params"; llvalue
+                        | _                             -> fatal "none,params"; raise Terminate
                     end
                 | false, true -> (* Locals *)
                     begin match l_value_ast.l_value_type with
@@ -309,9 +320,9 @@ and codegen_lval frame_ptr l_value_ast = (* This will always return a pointer to
                             get_ptr_to_Nth_element array_in_frame 0 lval_id
                         | Some _                        -> (* No references here *)
                             get_ptr_to_Nth_element correct_frame l_value_ast.offset lval_id
-                        | _                             -> fatal "none, locals"; llvalue
+                        | _                             -> fatal "none, locals"; raise Terminate
                     end
-                | _           -> fatal "none, false, false"; llvalue
+                | _           -> fatal "none, false, false"; raise Terminate
             end
 
         | L_exp (lval_id,Some exr) -> (* Only arrays here *)
@@ -327,7 +338,7 @@ and codegen_lval frame_ptr l_value_ast = (* This will always return a pointer to
                     let arr_ptr = get_ptr_to_Nth_element array_in_frame 0 lval_id in
                     build_gep arr_ptr [|exr_llvalue|] "identifier with some expression-local" builder
 
-                | _           -> fatal "some, false, false"; llvalue
+                | _           -> fatal "some, false, false"; raise Terminate
             end
 
         | L_str str                 -> 
@@ -368,17 +379,17 @@ and codegen_cond frame_ptr cond_ast =
             let start_bb = insertion_block builder in
             let the_function = block_parent start_bb in
 
-            let middle_bb = append_block context the_function "middle_bb" in
-            let merge_bb  = append_block context the_function "merge_bb"  in
+            let middle_bb = append_block context "middle_bb" the_function in
+            let merge_bb = append_block context "merge_bb" the_function in
 
             (* position_at_end start_bb builder; *)
             let cnd1_llvalue = codegen_cond frame_ptr cnd1 in
 
             (* Helper function *)
             let finish new_start_bb middle_llvalue new_middle_bb =
-                position_at_end merge_bb;
+                position_at_end merge_bb builder;
                 let phi = build_phi [(cnd1_llvalue, new_start_bb) ; (middle_llvalue, new_middle_bb)] "phi" builder in
-                position_at_end merge_bb;
+                position_at_end merge_bb builder;
                 phi
             in
             (* End of helper *)
@@ -386,23 +397,23 @@ and codegen_cond frame_ptr cond_ast =
             begin match lg_op with
                 | And ->
                     (* If cnd1 is true then (must compute cnd2) middle_bb else merge_bb *)
-                    build_cond_br cnd1_llvalue middle_bb merge_bb;
+                    ignore (build_cond_br cnd1_llvalue middle_bb merge_bb builder);
                     let new_start_bb = insertion_block builder in
 
-                    position_at_end middle_bb;
+                    position_at_end middle_bb builder;
                     let middle_llvalue = build_and cnd1_llvalue (codegen_cond frame_ptr cnd2) "and" builder in
-                    build_br merge_bb builder;
+                    ignore (build_br merge_bb builder);
                     let new_middle_bb = insertion_block builder in
 
                     finish new_start_bb middle_llvalue new_middle_bb
                 | Or  ->
                     (* If cnd1 is true then (no need to compute cnd2) merge_bb else middle_bb *)
-                    build_cond_br cnd1_llvalue merge_bb middle_bb;
+                    ignore (build_cond_br cnd1_llvalue merge_bb middle_bb builder);
                     let new_start_bb = insertion_block builder in
 
-                    position_at_end middle_bb;
+                    position_at_end middle_bb builder;
                     let middle_llvalue = build_or cnd1_llvalue (codegen_cond frame_ptr cnd2) "or" builder in
-                    build_br merge_bb builder;
+                    ignore (build_br merge_bb builder);
                     let new_middle_bb = insertion_block builder in
 
                     finish new_start_bb middle_llvalue new_middle_bb

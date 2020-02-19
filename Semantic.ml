@@ -128,7 +128,8 @@ let seman tree =
         let e = lookupEntry (id_make func_call_ast.call_id) LOOKUP_ALL_SCOPES true in
         begin match e.entry_info with
         | ENTRY_function func_entry ->
-            func_call_ast.callee_func_ast      <- func_entry.function_func_ast;
+            func_call_ast.callee_full_name     <- func_entry.function_full_name;
+            func_call_ast.callee_scope         <- e.entry_scope.sco_nesting;
             func_call_ast.caller_nesting_scope <- !currentScope.sco_nesting - 1;
 
             List.iter make_expr func_call_ast.call_expr;
@@ -200,7 +201,7 @@ let seman tree =
             | E_call ex_func_call ->
                 make_call ex_func_call;
                 expr_ast.expr_type <- ex_func_call.return_type;
-                if( ex_func_call.return_type = TYPE_proc ) then ( fatal "This is an expression and function cannot be a procedure" )
+                if( ex_func_call.return_type = Some TYPE_proc ) then ( fatal "This is an expression and function cannot be a procedure" )
                 
             | E_sign (ex_sign, ex_expr) ->
                 make_expr ex_expr;
@@ -229,10 +230,10 @@ let seman tree =
                         Some var_info.variable_type
                     | ENTRY_parameter par_info ->
                         l_value_ast.offset <- par_info.parameter_offset;
-                        begin match par_info.parameter_mode with
-                            | PASS_BY_REFERENCE -> l_value_ast.is_reference <- true;
-                            | _                 -> l_value_ast.is_reference <- false;
-                        end
+                        let _ = begin match par_info.parameter_mode with
+                            | PASS_BY_REFERENCE -> (l_value_ast.is_reference <- true)
+                            | _                 -> (l_value_ast.is_reference <- false)
+                        end in
                         l_value_ast.is_parameter <- true;
                         Some par_info.parameter_type
                     | _ -> 
@@ -282,7 +283,7 @@ let seman tree =
                 
             | S_call st_func_call -> 
                 make_call st_func_call;
-                if( st_func_call.return_type <> TYPE_proc ) then ( fatal "This is a statement, function must be a procedure" )
+                if( st_func_call.return_type <> Some TYPE_proc ) then ( fatal "This is a statement, function must be a procedure" )
                 
             | S_if (st_cond,st_stmt,st_stmt_opt) ->
                 make_cond st_cond;
@@ -336,10 +337,10 @@ let seman tree =
     and make_func f_ast =
         
         let f_SYM = newFunction (id_make f_ast.func_id) true in
-        begin match f_SYM.entry_info with
-            | ENTRY_function func_info -> func_info.function_func_ast <- f_ast;
-            | _                        -> fatal "entry must have been function_entry, ??";
-        end
+        let _ = begin match f_SYM.entry_info with
+            | ENTRY_function func_info -> func_info.function_full_name <- Some f_ast.full_name
+            | _                        -> fatal "entry must have been function_entry, ??"
+        end in
         Stack.push f_ast.func_ret_type funTypeStack;
         (* Nesting *)
         f_ast.func_nesting_scope <- f_SYM.entry_scope.sco_nesting;
@@ -352,7 +353,8 @@ let seman tree =
         let set_full_name loc = 
             begin match loc with
                 | Local_func loc_func -> 
-                    loc_func.full_name   <- String.concat "#" [f_ast.full_name, loc_func.func_id]
+                    let new_name = String.concat "#" [f_ast.full_name ; loc_func.func_id] in
+                    loc_func.full_name   <- new_name
                 | Local_var _         -> ()
             end
         in

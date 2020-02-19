@@ -1,8 +1,7 @@
 open Types
 open Symbol
-open Llvm
 
-type id = string
+type id_st = string
 
 (* type reference = Is_ref | Not_ref *)
 
@@ -40,8 +39,8 @@ type _type =
 *)
 
 type func = {
-    mutable full_name : id;
-    func_id : id;
+    mutable full_name : id_st;
+    func_id : id_st;
     func_pars : par list;
     func_ret_type : typ;
     func_local : local list;
@@ -50,10 +49,9 @@ type func = {
 }
 
 and par = {
-    par_id : id;
+    par_id : id_st;
     par_pass_way : pass_mode;
     par_type : typ;
-    mutable par_frame_offset : int;
 }
 
 and local = 
@@ -61,9 +59,8 @@ and local =
 | Local_var of var
 
 and var = {
-    var_id : id;
+    var_id : id_st;
     var_type : typ;
-    mutable locvar_frame_offset : int;
 }
 
 and stmt = 
@@ -76,10 +73,11 @@ and stmt =
 | S_return of expr option
 
 and func_call = {
-    call_id : id;
+    call_id : id_st;
     call_expr : expr list;
     mutable return_type : typ option;
-    mutable callee_func_ast : func option;
+    mutable callee_full_name : id_st option;
+    mutable callee_scope : int;
     mutable caller_nesting_scope : int;
 }
 
@@ -97,7 +95,7 @@ and expr = {
 }
 
 and raw_l_value = 
-| L_exp of id * (expr option)
+| L_exp of id_st * (expr option)
 | L_str of string
 
 and l_value = {

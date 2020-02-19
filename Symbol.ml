@@ -37,7 +37,7 @@ and function_info = {
   mutable function_result    : Types.typ;
   mutable function_pstatus   : param_status;
   mutable function_initquad  : int;
-  mutable function_func_ast  : Ast.func_ast option;
+  mutable function_full_name : string option;
 }
 
 and parameter_info = {
@@ -187,7 +187,7 @@ let newFunction id err =
       function_result = TYPE_none;
       function_pstatus = PARDEF_DEFINE;
       function_initquad = 0;
-      function_func_ast = None;
+      function_full_name = None
     } in
     newEntry id (ENTRY_function inf) false
 
