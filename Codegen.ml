@@ -1,4 +1,5 @@
 open Llvm
+open Llvm_analysis
 open Ast
 open Error
 open Types
@@ -127,6 +128,7 @@ let rec codegen_func func_ast =
     let f_bb = append_block context "entry block" func_llvalue in
     position_at_end f_bb builder;
 
+
     (* Create frame *)
     let frame_ptr = build_alloca frame_type "frame" builder in
 
@@ -134,7 +136,7 @@ let rec codegen_func func_ast =
         let element_ptr_llvalue = build_struct_gep frame_ptr idx "GEP" builder in
         ignore (build_store valuetostore_llvalue element_ptr_llvalue builder)
     in
-
+    
     (* Store each parameter into the frame *)
     let rec store_par_llvalue_lst_to_frame par_llvalue_lst idx = match par_llvalue_lst with
         | par_llvalue :: tl ->
@@ -154,7 +156,7 @@ let rec codegen_func func_ast =
 
 and codegen_call frame_ptr call_ast =
     let rec give_expr_llvalue_lst expr_lst = match expr_lst with
-        | exr :: tl -> (codegen_expr frame_ptr exr) :: (give_expr_llvalue_lst tl)
+        | exr :: tl -> (print_endline "okcgen"; codegen_expr frame_ptr exr) :: (give_expr_llvalue_lst tl)
         | []        -> []  
     in
 
@@ -180,17 +182,19 @@ and codegen_call frame_ptr call_ast =
 
     let expr_arr = 
         let expr_llvalue_lst = give_expr_llvalue_lst call_ast.call_expr in
+        
         if ( access_link_is_required ) then begin
+            print_endline "yok";
             let diff = call_ast.caller_nesting_scope - call_ast.callee_scope + 1  in
             let correct_frame = get_deep_access_link frame_ptr diff in
 
             Array.of_list ( correct_frame :: expr_llvalue_lst )
         end 
         else begin
+            print_endline "nok";
             Array.of_list expr_llvalue_lst
         end
     in
-
     build_call callee_func_llvalue expr_arr "call" builder
 
 and codegen_stmt_until frame_ptr previous_stmt_is_terminator st  = (* returns true if terminal *)
@@ -404,8 +408,8 @@ and codegen_lval frame_ptr l_value_ast = (* This will always return a pointer to
             end
 
         | L_str str                 -> 
-            let global_str = build_global_string str "string to build" builder in
-            build_struct_gep global_str 0 "string as a pointer to the first element of an array of chars" builder
+            let global_str = build_global_stringptr str "string to build" builder in
+            build_struct_gep global_str 0 "string as a char ptr" builder
     end
 
 and codegen_cond frame_ptr cond_ast =
@@ -547,4 +551,8 @@ let codegen tree =
     tree.frame_type <- Some pointer_type bool_type;
     
     codegen_func tree;
+    print_endline "before";
+    assert_valid_module the_module;
+    print_endline "yeah";
+    dump_module the_module
 

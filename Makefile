@@ -19,7 +19,7 @@ OCAMLC=ocamlc $(OCAMLC_FLAGS)
 OCAMLOPT=ocamlopt $(OCAMLOPT_FLAGS)
 OCAMLDEP=ocamldep
 INCLUDES=
-LLVM_PACKAGES=-package llvm
+LLVM_PACKAGES=-package llvm -package llvm.analysis
 
 default: alan
 

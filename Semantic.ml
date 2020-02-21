@@ -336,7 +336,8 @@ and make_local local_ast =
     end
 
 and make_func func_ast =
-    
+print_endline func_ast.func_id;
+    print_endline func_ast.full_name;
     let f_SYM = newFunction (id_make func_ast.func_id) true in
     let _ = begin match f_SYM.entry_info with
         | ENTRY_function func_info -> func_info.function_full_name <- Some func_ast.full_name
@@ -376,6 +377,10 @@ let init_existing_functions () =
     
         (***************** writeInteger (n : int) : proc *******************************************************************************************************)
             let f_wInt = newFunction (id_make "writeInteger") true in
+            let _ = begin match f_wInt.entry_info with
+                | ENTRY_function func_info -> func_info.function_full_name <- Some "writeInteger"
+                | _                        -> fatal "entry must have been function_entry, ??"
+            end in
             openScope ();
             
             make_par f_wInt {par_id = "n"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_int};
@@ -394,6 +399,10 @@ let init_existing_functions () =
             
         (***************** writeChar (b : byte) : proc *********************************************************************************************************)
             let f_wChar = newFunction (id_make "writeChar") true in
+            let _ = begin match f_wChar.entry_info with
+                | ENTRY_function func_info -> func_info.function_full_name <- Some "writeChar"
+                | _                        -> fatal "entry must have been function_entry, ??"
+            end in
             openScope ();
             
             make_par f_wChar {par_id = "b"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_byte};
@@ -403,6 +412,10 @@ let init_existing_functions () =
             
         (***************** writeString (s : reference byte []) : proc ******************************************************************************************)
             let f_wStr = newFunction (id_make "writeString") true in
+            let _ = begin match f_wStr.entry_info with
+                | ENTRY_function func_info -> func_info.function_full_name <- Some "writeString"
+                | _                        -> fatal "entry must have been function_entry, ??"
+            end in
             openScope ();
             
             make_par f_wStr {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)};
@@ -511,7 +524,6 @@ let seman tree =
     openScope ();
 
     init_existing_functions ();
-
     make_func tree;
     
     closeScope ();

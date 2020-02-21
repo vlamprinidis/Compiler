@@ -1,12 +1,14 @@
 open Lexer
 open Parser
 open Semantic
+open Codegen
 
 let main =
   let lexbuf = Lexing.from_channel stdin in
   try
     let tree = Parser.program Lexer.lexer lexbuf in
     seman tree;
+    codegen tree
     
     (*
     let 
