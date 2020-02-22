@@ -255,15 +255,22 @@ and make_l_value l_value_ast =
                 | ENTRY_variable var_info ->
                     l_value_ast.offset <- var_info.variable_offset;
                     l_value_ast.is_local <- true;
-                    Some var_info.variable_type
+                    let info_var_type = var_info.variable_type in
+                    let _ = begin match info_var_type with 
+                        | TYPE_array _  -> l_value_ast.is_ptr <- true
+                        | _             -> ()
+                    end in
+                    Some info_var_type
+
                 | ENTRY_parameter par_info ->
                     l_value_ast.offset <- par_info.parameter_offset;
                     let _ = begin match par_info.parameter_mode with
-                        | PASS_BY_REFERENCE -> (l_value_ast.is_reference <- true)
-                        | _                 -> (l_value_ast.is_reference <- false)
+                        | PASS_BY_REFERENCE -> (l_value_ast.is_ptr <- true) (* arrays are always by reference *)
+                        | _                 -> ()
                     end in
                     l_value_ast.is_parameter <- true;
                     Some par_info.parameter_type
+
                 | _ -> 
                     fatal "Identifier not valid";
                     None
@@ -411,15 +418,19 @@ print_endline func_ast.func_id;
 
 
 let init_existing_functions () =
-    begin
+    begin   
+        (* Helping function *)
+        let set_full_name fsym str = 
+            begin match fsym.entry_info with
+                | ENTRY_function func_info -> func_info.function_full_name <- Some str
+                | _                        -> fatal "entry must have been function_entry, ??"; raise Terminate
+            end
+        in
         (********* add existing functions **********************************************************************************************************************)
     
         (***************** writeInteger (n : int) : proc *******************************************************************************************************)
             let f_wInt = newFunction (id_make "writeInteger") true in
-            let _ = begin match f_wInt.entry_info with
-                | ENTRY_function func_info -> func_info.function_full_name <- Some "writeInteger"
-                | _                        -> fatal "entry must have been function_entry, ??"
-            end in
+            set_full_name f_wInt "writeInteger";
             openScope ();
             
             make_par f_wInt {par_id = "n"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_int; par_offset = 0; symb_id = None;};
@@ -429,6 +440,7 @@ let init_existing_functions () =
             
         (***************** writeByte (b : byte) : proc *********************************************************************************************************)
             let f_wByte = newFunction (id_make "writeByte") true in
+            set_full_name f_wByte "writeByte";
             openScope ();
             
             make_par f_wByte {par_id = "b"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_byte; par_offset = 0; symb_id = None;};
@@ -438,10 +450,7 @@ let init_existing_functions () =
             
         (***************** writeChar (b : byte) : proc *********************************************************************************************************)
             let f_wChar = newFunction (id_make "writeChar") true in
-            let _ = begin match f_wChar.entry_info with
-                | ENTRY_function func_info -> func_info.function_full_name <- Some "writeChar"
-                | _                        -> fatal "entry must have been function_entry, ??"
-            end in
+            set_full_name f_wChar "writeChar";
             openScope ();
             
             make_par f_wChar {par_id = "b"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_byte; par_offset = 0; symb_id = None;};
@@ -451,10 +460,7 @@ let init_existing_functions () =
             
         (***************** writeString (s : reference byte []) : proc ******************************************************************************************)
             let f_wStr = newFunction (id_make "writeString") true in
-            let _ = begin match f_wStr.entry_info with
-                | ENTRY_function func_info -> func_info.function_full_name <- Some "writeString"
-                | _                        -> fatal "entry must have been function_entry, ??"
-            end in
+            set_full_name f_wStr "writeString";
             openScope ();
             
             make_par f_wStr {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 0; symb_id = None;};
@@ -464,6 +470,7 @@ let init_existing_functions () =
             
         (***************** readInteger () : int ****************************************************************************************************************)
             let f_rInt = newFunction (id_make "readInteger") true in
+            set_full_name f_rInt "readInteger";
             openScope ();
             
             endFunctionHeader f_rInt TYPE_int;
@@ -472,6 +479,7 @@ let init_existing_functions () =
             
         (***************** readByte () : byte ******************************************************************************************************************)
             let f_rByte = newFunction (id_make "readByte") true in
+            set_full_name f_rByte "readByte";
             openScope ();
             
             endFunctionHeader f_rByte TYPE_byte;
@@ -480,6 +488,7 @@ let init_existing_functions () =
             
         (***************** readChar () : byte ******************************************************************************************************************)
             let f_rChar = newFunction (id_make "readChar") true in
+            set_full_name f_rChar "readChar";
             openScope ();
             
             endFunctionHeader f_rChar TYPE_byte;
@@ -488,6 +497,7 @@ let init_existing_functions () =
             
         (***************** readString (n : int, s : reference byte []) : proc **********************************************************************************)
             let f_rStr = newFunction (id_make "readString") true in
+            set_full_name f_rStr "readString";
             openScope ();
             
             List.iter (make_par f_rStr) [{par_id = "n"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_int; par_offset = 0; symb_id = None;};
@@ -498,6 +508,7 @@ let init_existing_functions () =
             
         (***************** extend (b : byte) : int *************************************************************************************************************)
             let f_ext = newFunction(id_make "extend") true in
+            set_full_name f_ext "extend";
             openScope ();
             
             make_par f_ext {par_id = "b"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_byte; par_offset = 0; symb_id = None;};
@@ -507,6 +518,7 @@ let init_existing_functions () =
             
         (***************** shrink (i : int) : byte *************************************************************************************************************)
             let f_shrink = newFunction(id_make "shrink") true in
+            set_full_name f_shrink "shrink";
             openScope ();
             
             make_par f_shrink {par_id = "i"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_int; par_offset = 0; symb_id = None;};
@@ -516,6 +528,7 @@ let init_existing_functions () =
             
         (***************** strlen (s : reference byte []) : int ************************************************************************************************)
             let f_len = newFunction(id_make "strlen") true in
+            set_full_name f_len "strlen";
             openScope ();
             
             make_par f_len {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 0; symb_id = None;};
@@ -525,6 +538,7 @@ let init_existing_functions () =
             
         (***************** strcmp (s1 : reference byte [], s2 : reference byte []) : int ***********************************************************************)
             let f_cmp = newFunction (id_make "strcmp") true in
+            set_full_name f_cmp "strcmp";
             openScope ();
             
             List.iter (make_par f_cmp) [{par_id = "s1"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 0; symb_id = None;};
@@ -535,6 +549,7 @@ let init_existing_functions () =
             
         (***************** strcpy (trg : reference byte [], src : reference byte []) : proc ********************************************************************)
             let f_cpy = newFunction (id_make "strcpy") true in
+            set_full_name f_cpy "strcpy";
             openScope ();
             
             List.iter (make_par f_cpy) [{par_id = "trg"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 0; symb_id = None;};
@@ -545,6 +560,7 @@ let init_existing_functions () =
             
         (***************** strcat (trg : reference byte [], src : reference byte []) : proc ********************************************************************)
             let f_cat = newFunction (id_make "strcat") true in
+            set_full_name f_cat "strcat";
             openScope ();
             
             List.iter (make_par f_cat) [{par_id = "trg"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 0; symb_id = None;};

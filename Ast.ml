@@ -112,9 +112,9 @@ and l_value = {
     mutable l_value_type : typ option;
     mutable l_value_nesting_diff : int;
     mutable offset : int;
-    mutable is_reference : bool;
     mutable is_parameter : bool;
     mutable is_local : bool;
+    mutable is_ptr : bool;
 }
 
 and cond = 

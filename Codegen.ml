@@ -144,7 +144,6 @@ and codegen_func func_ast =
     let give_offset pr = pr.par_offset in
     let par_offsets = List.map give_offset func_ast.func_pars in
 
-    Printf.printf "%d" (List.length par_llvalue_lst) ; Printf.printf "%d" (List.length par_offsets) ;
     (* Store starting from position 0 -- access link is included*)
     List.iter2 store_par par_llvalue_lst (0 :: par_offsets);
     
@@ -165,7 +164,9 @@ and codegen_func func_ast =
     ignore (store_vars func_ast.func_local);
 
     (* Generate code for statements *)
-    ignore ( List.fold_left (codegen_stmt_until frame_ptr) false func_ast.func_stmt );
+    (* ignore ( List.fold_left (codegen_stmt_until frame_ptr) false func_ast.func_stmt ); *)
+
+    ignore (stmt_help frame_ptr func_ast.func_stmt);
 
     (* LLVM requires a terminator block *)
     let _ = begin match block_terminator (insertion_block builder) with
@@ -178,7 +179,6 @@ and codegen_func func_ast =
 
         | Some _    ->  ()
     end in 
-    print_endline "ending";
     ()
 
 
@@ -216,21 +216,26 @@ and codegen_call frame_ptr call_ast =
         let expr_llvalue_lst = List.map2 give_expr_llvalue declared_lst call_ast.call_expr in
         
         if ( access_link_is_required ) then begin
-            print_endline "yok";
             let diff = call_ast.caller_nesting_scope - call_ast.callee_scope + 1  in
             let correct_frame = get_deep_access_link frame_ptr diff in
 
             Array.of_list ( correct_frame :: expr_llvalue_lst )
         end 
         else begin
-            print_endline "nok";
             Array.of_list expr_llvalue_lst
         end
     in
-    build_call callee_func_llvalue expr_arr "call" builder
+    build_call callee_func_llvalue expr_arr "" builder
 
-and codegen_stmt_until frame_ptr previous_stmt_is_terminator st  = (* returns true if terminal *)
-    previous_stmt_is_terminator || codegen_stmt frame_ptr st
+(* and codegen_stmt_until frame_ptr previous_stmt_is_terminator st  = (* returns true if terminal *)
+    previous_stmt_is_terminator || codegen_stmt frame_ptr st *)
+
+and stmt_help frame_ptr st_lst = (* returns true if terminal *)
+begin match st_lst with
+    | st_hd :: tl   ->      let st_next = codegen_stmt frame_ptr st_hd in 
+                            if(st_next) then (true) else (stmt_help frame_ptr tl)
+    | []            ->      false
+end
 
 and codegen_stmt frame_ptr stmt_ast = (* returns true if terminal *)
     begin match stmt_ast with
@@ -244,9 +249,8 @@ and codegen_stmt frame_ptr stmt_ast = (* returns true if terminal *)
             false
 
         | S_comp st_lst             ->
-            List.fold_left (codegen_stmt_until frame_ptr) false st_lst
-            
-            (* List.iter (codegen_stmt frame_ptr) st_lst; *)
+            (* List.fold_left (codegen_stmt_until frame_ptr) false st_lst *)
+            stmt_help frame_ptr st_lst
 
         | S_call fcall              -> (* Call to a void function *)
             ignore (codegen_call frame_ptr fcall);
@@ -393,15 +397,15 @@ and codegen_expr frame_ptr expr_ast = (* never returns a (llvalue) ptr to anythi
 
 and codegen_lval frame_ptr l_value_ast = (* returns a (llvalue) pointer to the element *)
     let correct_frame = get_deep_access_link frame_ptr l_value_ast.l_value_nesting_diff in
-
+    print_endline "frame got";
     begin match l_value_ast.l_value_raw with
-        | L_id (_, None)      ->    if (l_value_ast.is_reference)
+        | L_id (_, None)      ->    if (l_value_ast.is_ptr)
                                     then(
                                         dereference (get_ptr_to_Nth_element correct_frame l_value_ast.offset)
                                     ) else (
                                         get_ptr_to_Nth_element correct_frame l_value_ast.offset
                                     )
-        | L_id (_, Some exr)  -> (* Only arrays here -- is always reference *) if(not l_value_ast.is_reference) then (fatal "codegen_lval: must be a reference"; raise Terminate);
+        | L_id (_, Some exr)  -> (* Only arrays here *) if (not l_value_ast.is_ptr) then (fatal "codegen_lval: must be an array");
                                     let lval_exr = codegen_expr frame_ptr exr in
                                     let arr_ptr = dereference (get_ptr_to_Nth_element correct_frame l_value_ast.offset) in
                                     build_in_bounds_gep arr_ptr [|lval_exr|] "ptr to EXPRth element in array" builder
@@ -519,7 +523,7 @@ let codegen_existing_functions () =
     let writeByte_par   = param writeByte 0 in
     let from_extend     = build_call extend [|writeByte_par|] "extend call" builder in
     let writeInteger    = match lookup_function "writeInteger" the_module with | Some fn -> fn | _ -> fatal "writeInteger missing"; raise Terminate in
-    let _               = build_call writeInteger [|from_extend|] "writeInteger call" builder in
+    let _               = build_call writeInteger [|from_extend|] "" builder in
     let _               = build_ret_void builder in
 
     (* shrink (i : int) : byte *)
@@ -533,8 +537,8 @@ let codegen_existing_functions () =
     let readByte        = codegen_declare "readByte" byte_type [] in
     let _               = codegen_block readByte in
     let readInteger     = match lookup_function "readInteger" the_module with | Some fn -> fn | _ -> fatal "readInteger missing"; raise Terminate in
-    let from_readInt    = build_call readInteger [||] "readInteger call" builder in
-    let from_shrink     = build_call shrink [|from_readInt|] "shrink call" builder in
+    let from_readInt    = build_call readInteger [||] "" builder in
+    let from_shrink     = build_call shrink [|from_readInt|] "" builder in
     let _               = build_ret from_shrink builder in
     
     ()
@@ -561,8 +565,6 @@ let codegen tree =
     tree.isMain <- true;
     
     codegen_func tree;
-    print_endline "before";
     assert_valid_module the_module;
-    print_endline "yeah";
     dump_module the_module
 
