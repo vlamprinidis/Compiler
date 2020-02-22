@@ -1,6 +1,7 @@
 open Types
 open Symbol
 open Llvm
+open Identifier
 
 type my_id = string
 
@@ -49,12 +50,15 @@ type func = {
     mutable func_nesting_scope : int;
     mutable parent : func option;
     mutable frame_type : lltype option;
+    mutable isMain : bool;
 }
 
 and par = {
     par_id : my_id;
     par_pass_way : pass_mode;
     par_type : typ;
+    mutable par_offset: int;
+    mutable symb_id : Identifier.id option;
 }
 
 and local = 
@@ -64,6 +68,7 @@ and local =
 and var = {
     var_id : my_id;
     var_type : typ;
+    mutable var_offset : int;
 }
 
 and stmt = 
@@ -82,12 +87,13 @@ and call = {
     mutable callee_full_name : my_id option;
     mutable callee_scope : int;
     mutable caller_nesting_scope : int;
+    mutable declared_pars : (pass_mode list) option;
 }
 
 and raw_expr = 
 | E_int of int
 | E_char of char
-| E_val of l_value
+| E_lvalue of l_value
 | E_call of call
 | E_sign of sign * expr
 | E_op of expr * op * expr

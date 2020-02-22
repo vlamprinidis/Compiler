@@ -73,6 +73,7 @@ func_def : T_id T_lparen fpar_list_opt T_rparen T_colon r_type local_def_rep com
 			func_nesting_scope = 0;
 			parent = None;
 			frame_type = None;
+			isMain = false;
     }
 }
 
@@ -84,7 +85,7 @@ fpar_list : fpar_def fpar_def_rep { $1 :: $2 }
 fpar_def_rep : T_comma fpar_def fpar_def_rep { $2 :: $3 }
 	| /* nothing */ { [] }
           
-fpar_def : T_id T_colon fpar_def_opt par_type { { par_id = $1 ; par_pass_way = $3 ; par_type = $4 ;} }
+fpar_def : T_id T_colon fpar_def_opt par_type { { par_id = $1 ; par_pass_way = $3 ; par_type = $4 ; par_offset = 0; symb_id = None; } }
 
 fpar_def_opt : T_reference { PASS_BY_REFERENCE }
 	| /* nothing */ { PASS_BY_VALUE }
@@ -105,9 +106,9 @@ local_def_rep: local_def local_def_rep { $1 :: $2 }
 local_def : func_def { Local_func $1 }
 	| var_def { Local_var $1 }
 
-var_def : T_id T_colon data_type T_semi { { var_id = $1 ; var_type = $3 ;} }
+var_def : T_id T_colon data_type T_semi { { var_id = $1 ; var_type = $3 ; var_offset = 0; } }
 
-var_def : T_id T_colon data_type T_lbra T_const T_rbra T_semi { { var_id = $1 ; var_type = TYPE_array ($3,$5) ;} }
+var_def : T_id T_colon data_type T_lbra T_const T_rbra T_semi { { var_id = $1 ; var_type = TYPE_array ($3,$5) ; var_offset = 0; } }
 
 stmt : T_semi { Null_stmt }
 	| l_value T_assign expr T_semi { S_assign ($1,$3) }
@@ -126,7 +127,7 @@ compound_stmt : T_lcurl stmt_rep T_rcurl { $2 }
 stmt_rep : stmt stmt_rep { $1 :: $2 }
 	| /* nothing */ { [] }
 
-func_call : T_id T_lparen expr_list_opt T_rparen { { call_id = $1 ; call_expr = $3 ; return_type = None ; callee_full_name = None; callee_scope = 0 ; caller_nesting_scope = 0; } }
+func_call : T_id T_lparen expr_list_opt T_rparen { { call_id = $1 ; call_expr = $3 ; return_type = None ; callee_full_name = None; callee_scope = 0 ; caller_nesting_scope = 0; declared_pars = None;} }
 
 expr_list_opt : expr_list { $1 }
 	| /* nothing */ { [] }
@@ -138,7 +139,7 @@ expr_list_rep : T_comma expr expr_list_rep { $2 :: $3 }
 
 expr : T_const { form_expr (E_int $1) }
 	| T_char { form_expr (E_char $1) }
-	| l_value { form_expr (E_val $1) }
+	| l_value { form_expr (E_lvalue $1) }
 	| T_lparen expr T_rparen { $2 }
 	| func_call { form_expr (E_call $1) } 
 	/*| sign expr {()}*/

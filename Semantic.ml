@@ -98,6 +98,28 @@ let printSymbolTable () =
 (* Start *)
 let funTypeStack = Stack.create ()
 
+let set_offsets_in_ast func_ast =
+    let rec set_pars par_lst idx =
+        begin match par_lst with
+            | par :: tl ->
+                par.par_offset <- idx;
+                set_pars tl (idx + 1)
+            | [] -> ()
+        end
+    in
+    set_pars func_ast.func_pars 1;
+    let rec set_locvars locals_lst idx =
+        begin match locals_lst with
+            | (Local_var locvar) :: tl ->
+                locvar.var_offset <- idx;
+                set_locvars tl (idx + 1)
+            | (Local_func _) :: tl ->
+                set_locvars tl idx
+            | [] -> ()
+        end
+    in
+    set_locvars func_ast.func_local ((List.length func_ast.func_pars) + 1)
+
 let rec make_cond cond_ast =
     begin match cond_ast with
         | C_true ->
@@ -136,18 +158,24 @@ and make_call call_ast =
                                         | ENTRY_parameter par -> (par.parameter_type,par.parameter_mode)
                                         | _ -> fatal "Parameter declaration gone wrong -- Why?"; (TYPE_none,PASS_BY_VALUE)
             in
+            let get_pass_mode_from tupl = match tupl with | (_,parmode) -> parmode in
+
             let get_actual_param_typ expr_ = match expr_.expr_type with
                                             | Some ex_type_some -> (ex_type_some,expr_.expr_raw)
                                             | None -> fatal "Sth gone terribly wrong"; (TYPE_none,E_int 0)
             in
             
             let declared_param_typ_lst = List.map get_param_typ func_entry.function_paramlist in
+
+            let only_pass_mode_lst = List.map get_pass_mode_from declared_param_typ_lst in
+            call_ast.declared_pars <- Some only_pass_mode_lst;
+
             let actual_param_typ_lst = List.map get_actual_param_typ call_ast.call_expr in
             
             let equal_declared_actual (dec_type,dec_mode) (act_type,act_raw) = 
                 match (dec_mode, act_raw) with
                     | (PASS_BY_VALUE, _) -> equalType dec_type act_type
-                    | (PASS_BY_REFERENCE, E_val _) -> equalType dec_type act_type
+                    | (PASS_BY_REFERENCE, E_lvalue _) -> equalType dec_type act_type
                     | _ -> false
             in
             
@@ -161,7 +189,7 @@ and make_call call_ast =
             let myPrint_act (s,info) =
                 pretty_typ std_formatter s;
                 match info with
-                    | E_val _ -> fprintf std_formatter "[L_value] "
+                    | E_lvalue _ -> fprintf std_formatter "[L_value] "
                     | _ -> fprintf std_formatter "[NOT_L_value] "
             in
 
@@ -193,7 +221,7 @@ and make_expr expr_ast =
         | E_char ex_char -> 
             expr_ast.expr_type <- Some TYPE_byte
             
-        | E_val ex_l_value ->
+        | E_lvalue ex_l_value ->
             make_l_value ex_l_value;
             expr_ast.expr_type <- ex_l_value.l_value_type
             
@@ -317,7 +345,9 @@ and make_stmt stmt_ast =
 and make_par f par_ast =
     begin match (par_ast.par_type,par_ast.par_pass_way) with
         | (TYPE_array _, PASS_BY_VALUE) -> fatal "An array cannot be passed by value"
-        | _ -> ignore (newParameter (id_make par_ast.par_id) par_ast.par_type par_ast.par_pass_way f true)
+        | _ ->  
+            let newPar = newParameter (id_make par_ast.par_id) par_ast.par_type par_ast.par_pass_way f true in
+            par_ast.symb_id <- Some newPar.entry_id
     end
 
 and make_local local_ast = 
@@ -331,8 +361,8 @@ and make_local local_ast =
                 | TYPE_array (_,siz)    -> if(siz <= 0)then(fatal "Array size must be a positive integer")
                 | _                     -> ()
             end;
-            ignore (newVariable (id_make loc_var.var_id) loc_var.var_type true);
-            ()
+            let newVar = newVariable (id_make loc_var.var_id) loc_var.var_type true in
+            loc_var.var_offset <- (match newVar.entry_info with | ENTRY_variable inf -> inf.variable_offset | _ -> fatal "var bad luck"; raise Terminate)
     end
 
 and make_func func_ast =
@@ -363,6 +393,15 @@ print_endline func_ast.func_id;
     in
     List.iter set_parent_and_full_name func_ast.func_local;
     List.iter make_local func_ast.func_local;
+    
+    (* Helping func *)
+    let set_par_offset par_ast = 
+        let par_symb_id = match par_ast.symb_id with | Some sid -> sid | None -> fatal "symb id bad luck "; raise Terminate in
+        let parEntry = lookupEntry par_symb_id LOOKUP_CURRENT_SCOPE false in
+        let parOffset = match parEntry.entry_info with | ENTRY_parameter inf -> inf.parameter_offset | _ -> fatal "par bad luck "; raise Terminate in
+        par_ast.par_offset <- parOffset
+    in
+    List.iter set_par_offset func_ast.func_pars;
 
     List.iter make_stmt func_ast.func_stmt;
     
@@ -383,7 +422,7 @@ let init_existing_functions () =
             end in
             openScope ();
             
-            make_par f_wInt {par_id = "n"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_int};
+            make_par f_wInt {par_id = "n"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_int; par_offset = 0; symb_id = None;};
             endFunctionHeader f_wInt TYPE_proc;
             
             closeScope ();
@@ -392,7 +431,7 @@ let init_existing_functions () =
             let f_wByte = newFunction (id_make "writeByte") true in
             openScope ();
             
-            make_par f_wByte {par_id = "b"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_byte};
+            make_par f_wByte {par_id = "b"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_byte; par_offset = 0; symb_id = None;};
             endFunctionHeader f_wByte TYPE_proc;
             
             closeScope ();
@@ -405,7 +444,7 @@ let init_existing_functions () =
             end in
             openScope ();
             
-            make_par f_wChar {par_id = "b"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_byte};
+            make_par f_wChar {par_id = "b"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_byte; par_offset = 0; symb_id = None;};
             endFunctionHeader f_wChar TYPE_proc;
             
             closeScope ();
@@ -418,7 +457,7 @@ let init_existing_functions () =
             end in
             openScope ();
             
-            make_par f_wStr {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)};
+            make_par f_wStr {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 0; symb_id = None;};
             endFunctionHeader f_wStr TYPE_proc;
             
             closeScope ();
@@ -451,8 +490,8 @@ let init_existing_functions () =
             let f_rStr = newFunction (id_make "readString") true in
             openScope ();
             
-            List.iter (make_par f_rStr) [{par_id = "n"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_int};
-                                        {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)}];
+            List.iter (make_par f_rStr) [{par_id = "n"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_int; par_offset = 0; symb_id = None;};
+                                        {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 1; symb_id = None;}];
             endFunctionHeader f_rStr TYPE_proc;
             
             closeScope ();
@@ -461,7 +500,7 @@ let init_existing_functions () =
             let f_ext = newFunction(id_make "extend") true in
             openScope ();
             
-            make_par f_ext {par_id = "b"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_byte};
+            make_par f_ext {par_id = "b"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_byte; par_offset = 0; symb_id = None;};
             endFunctionHeader f_ext TYPE_int;
             
             closeScope ();
@@ -470,7 +509,7 @@ let init_existing_functions () =
             let f_shrink = newFunction(id_make "shrink") true in
             openScope ();
             
-            make_par f_shrink {par_id = "i"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_int};
+            make_par f_shrink {par_id = "i"; par_pass_way = PASS_BY_VALUE; par_type = TYPE_int; par_offset = 0; symb_id = None;};
             endFunctionHeader f_shrink TYPE_byte;
             
             closeScope ();
@@ -479,7 +518,7 @@ let init_existing_functions () =
             let f_len = newFunction(id_make "strlen") true in
             openScope ();
             
-            make_par f_len {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)};
+            make_par f_len {par_id = "s"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 0; symb_id = None;};
             endFunctionHeader f_len TYPE_int;
             
             closeScope ();
@@ -488,8 +527,8 @@ let init_existing_functions () =
             let f_cmp = newFunction (id_make "strcmp") true in
             openScope ();
             
-            List.iter (make_par f_cmp) [{par_id = "s1"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)};
-                                        {par_id = "s2"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)}];
+            List.iter (make_par f_cmp) [{par_id = "s1"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 0; symb_id = None;};
+                                        {par_id = "s2"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 1; symb_id = None;}];
             endFunctionHeader f_cmp TYPE_int;
             
             closeScope ();
@@ -498,8 +537,8 @@ let init_existing_functions () =
             let f_cpy = newFunction (id_make "strcpy") true in
             openScope ();
             
-            List.iter (make_par f_cpy) [{par_id = "trg"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)};
-                                        {par_id = "src"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)}];
+            List.iter (make_par f_cpy) [{par_id = "trg"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 0; symb_id = None;};
+                                        {par_id = "src"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 1; symb_id = None;}];
             endFunctionHeader f_cpy TYPE_proc;
             
             closeScope ();
@@ -508,8 +547,8 @@ let init_existing_functions () =
             let f_cat = newFunction (id_make "strcat") true in
             openScope ();
             
-            List.iter (make_par f_cat) [{par_id = "trg"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)};
-                                        {par_id = "src"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1)}];
+            List.iter (make_par f_cat) [{par_id = "trg"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 0; symb_id = None;};
+                                        {par_id = "src"; par_pass_way = PASS_BY_REFERENCE; par_type = TYPE_array (TYPE_byte,-1); par_offset = 1; symb_id = None;}];
             endFunctionHeader f_cat TYPE_proc;
 
             closeScope ();

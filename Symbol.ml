@@ -272,8 +272,9 @@ let endFunctionHeader e typ =
                   e.entry_scope.sco_negofs <- e.entry_scope.sco_negofs + 1
               | _ ->
                   internal "Cannot fix offset to a non parameter" in
-            List.iter fix_offset inf.function_paramlist;
-            inf.function_paramlist <- List.rev inf.function_paramlist
+            inf.function_paramlist <- List.rev inf.function_paramlist;
+            List.iter fix_offset inf.function_paramlist
+            
         | PARDEF_CHECK ->
             if inf.function_redeflist <> [] then
               error "Fewer parameters than expected in redeclaration \
