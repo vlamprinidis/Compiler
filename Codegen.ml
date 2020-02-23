@@ -562,9 +562,21 @@ let codegen tree =
         frame_type = Some pointer_type bool_type;
         isMain = false;
     });
-    tree.isMain <- true;
     
-    codegen_func tree;
+    if(tree.full_name <> "main") then begin
+        let main_lltype = function_type proc_type [||] in
+        let main_llvalue = declare_function "main" main_lltype the_module in
+        let main_bb = append_block context "entry block" main_llvalue in
+        position_at_end main_bb builder;
+
+        codegen_func tree;
+        ignore (build_call main_llvalue [||] "" builder);
+        ignore (build_ret_void builder)
+
+    end else begin
+        codegen_func tree
+    end;
+
     assert_valid_module the_module;
     dump_module the_module
 
