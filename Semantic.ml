@@ -98,29 +98,20 @@ let printSymbolTable () =
 (* Start *)
 let funTypeStack = Stack.create ()
 
-let set_offsets_in_ast func_ast =
-    let rec set_pars par_lst idx =
-        begin match par_lst with
-            | par :: tl ->
-                par.par_offset <- idx;
-                set_pars tl (idx + 1)
-            | [] -> ()
-        end
-    in
-    set_pars func_ast.func_pars 1;
-    let rec set_locvars locals_lst idx =
-        begin match locals_lst with
-            | (Local_var locvar) :: tl ->
-                locvar.var_offset <- idx;
-                set_locvars tl (idx + 1)
-            | (Local_func _) :: tl ->
-                set_locvars tl idx
-            | [] -> ()
-        end
-    in
-    set_locvars func_ast.func_local ((List.length func_ast.func_pars) + 1)
+let print_offsets_in_ast func_ast =
+    printf "%s: \n" func_ast.full_name;
+    printf "%s: \n" "Parameters";
+    let print_par par = ignore (printf "%s: %d \n" par.par_id par.par_offset) in
+    List.iter print_par func_ast.func_pars; 
 
-let rec make_cond cond_ast =
+    printf "%s: \n" "Locals";
+    let print_var locvar = match locvar with | Local_func _ -> () | Local_var var -> ignore (printf "%s: %d \n" var.var_id var.var_offset) in
+    List.iter print_var func_ast.func_local;
+    ignore (printf "%s \n" " ")
+
+let myPerr fnm str msg = printf "\nIn function: '%s': '%s'\nMessage: %s\n" fnm str msg
+
+let rec make_cond fnm cond_ast =
     begin match cond_ast with
         | C_true ->
             ()
@@ -129,22 +120,22 @@ let rec make_cond cond_ast =
             ()
             
         | (C_not cond_cond) ->
-            make_cond cond_cond
+            make_cond fnm cond_cond
             
         | C_compare (cond_expr_left, cond_compare_op, cond_expr_right) ->
-            make_expr cond_expr_left;
-            make_expr cond_expr_right;
+            make_expr fnm cond_expr_left;
+            make_expr fnm cond_expr_right;
             if( (cond_expr_left.expr_type = Some TYPE_int || cond_expr_left.expr_type = Some TYPE_byte) && cond_expr_left.expr_type = cond_expr_right.expr_type )
-            then( () )
-            else( fatal "Compare type mismatch" )
+            then ( () )
+            else ( myPerr fnm "" "Compare type mismatch"; fatal "Compare type mismatch" )
             
         | C_logic (cond_cond_left, cond_logic_op, cond_cond_right) ->
-            make_cond cond_cond_left;
-            make_cond cond_cond_right
+            make_cond fnm cond_cond_left;
+            make_cond fnm cond_cond_right
     end
 
 (*check if parameter call is ok*)
-and make_call call_ast =
+and make_call fnm call_ast =
     let e = lookupEntry (id_make call_ast.call_id) LOOKUP_ALL_SCOPES true in
     begin match e.entry_info with
         | ENTRY_function func_entry ->
@@ -152,7 +143,7 @@ and make_call call_ast =
             call_ast.callee_scope         <- e.entry_scope.sco_nesting;
             call_ast.caller_nesting_scope <- !currentScope.sco_nesting - 1;
 
-            List.iter make_expr call_ast.call_expr;
+            List.iter (make_expr fnm) call_ast.call_expr;
             
             let get_param_typ param_entry = match param_entry.entry_info with 
                                         | ENTRY_parameter par -> (par.parameter_type,par.parameter_mode)
@@ -181,39 +172,42 @@ and make_call call_ast =
             
             let myPrint_dec (s,info) =
                 pretty_typ std_formatter s;
+                printf " ";
                 match info with
-                    | PASS_BY_VALUE -> fprintf std_formatter "[PASS_BY_VALUE] "
-                    | PASS_BY_REFERENCE -> fprintf std_formatter "[PASS_BY_REFERENCE] "
+                    | PASS_BY_VALUE -> printf "%s\n" " - [PASS_BY_VALUE]"
+                    | PASS_BY_REFERENCE -> printf "%s\n" " - [PASS_BY_REFERENCE]"
             in
             
             let myPrint_act (s,info) =
                 pretty_typ std_formatter s;
+                printf " ";
                 match info with
-                    | E_lvalue _ -> fprintf std_formatter "[L_value] "
-                    | _ -> fprintf std_formatter "[NOT_L_value] "
+                    | E_lvalue _ -> printf "%s\n" " - [L_value]"
+                    | _ -> printf "%s\n" " - [NOT_L_value]"
             in
 
             if( ( List.length declared_param_typ_lst = List.length actual_param_typ_lst ) && 
                 ( List.for_all2 equal_declared_actual declared_param_typ_lst actual_param_typ_lst )
                 )
             
-            then( call_ast.return_type <- Some func_entry.function_result )
+            then ( call_ast.return_type <- Some func_entry.function_result )
             
             else(
-                Printf.printf "%s" "Expected parameters: ";
+                myPerr fnm call_ast.call_id "Incorrect argument format";
+                printf "%s\n" "Expected parameters: ";
                 List.iter myPrint_dec declared_param_typ_lst;
                 print_newline ();
-                Printf.printf "%s" "Given parameters:    "; 
+                printf "%s\n" "Given parameters:    "; 
                 List.iter myPrint_act actual_param_typ_lst;
                 print_newline ();
                 fatal "Incorrect argument format" 
             )
             
         | _ ->
-            fatal "Call of a non-function"
+            myPerr fnm call_ast.call_id "Call of a non-function"; fatal "Call of a non-function"
     end
 
-and make_expr expr_ast = 
+and make_expr fnm expr_ast = 
     begin match expr_ast.expr_raw with
         | E_int ex_int -> 
             expr_ast.expr_type <- Some TYPE_int
@@ -222,30 +216,30 @@ and make_expr expr_ast =
             expr_ast.expr_type <- Some TYPE_byte
             
         | E_lvalue ex_l_value ->
-            make_l_value ex_l_value;
+            make_l_value fnm ex_l_value;
             expr_ast.expr_type <- ex_l_value.l_value_type
             
         | E_call ex_func_call ->
-            make_call ex_func_call;
+            make_call fnm ex_func_call;
             expr_ast.expr_type <- ex_func_call.return_type;
-            if( ex_func_call.return_type = Some TYPE_proc ) then ( fatal "This is an expression and function cannot be a procedure" )
+            if( ex_func_call.return_type = Some TYPE_proc ) then ( myPerr fnm ex_func_call.call_id "This is an expression and function cannot be a procedure"; fatal "This is an expression and function cannot be a procedure" )
             
         | E_sign (ex_sign, ex_expr) ->
-            make_expr ex_expr;
+            make_expr fnm ex_expr;
             if(ex_expr.expr_type = Some TYPE_int)
-            then(expr_ast.expr_type <- ex_expr.expr_type)
-            else(fatal "Sign must be followed by an integer")
+            then (expr_ast.expr_type <- ex_expr.expr_type)
+            else (myPerr fnm "" "Sign must be followed by an integer"; fatal "Sign must be followed by an integer")
             
         | E_op (ex_expr_left, ex_op, ex_expr_right) ->
-            make_expr ex_expr_left;
-            make_expr ex_expr_right;
+            make_expr fnm ex_expr_left;
+            make_expr fnm ex_expr_right;
             
             if((ex_expr_left.expr_type = Some TYPE_int || ex_expr_left.expr_type = Some TYPE_byte) && ex_expr_left.expr_type = ex_expr_right.expr_type)
-            then(expr_ast.expr_type <- ex_expr_left.expr_type)
-            else(fatal "Type mismatch")
+            then (expr_ast.expr_type <- ex_expr_left.expr_type)
+            else ( myPerr fnm "" "Operation type mismatch"; fatal "Operation type mismatch")
     end
 
-and make_l_value l_value_ast =
+and make_l_value fnm l_value_ast =
     begin match l_value_ast.l_value_raw with
         | L_id (lval_id, lval_expr_opt) ->
             let e = lookupEntry (id_make lval_id) LOOKUP_ALL_SCOPES true in
@@ -271,7 +265,8 @@ and make_l_value l_value_ast =
                     l_value_ast.is_parameter <- true;
                     Some par_info.parameter_type
 
-                | _ -> 
+                | _ ->
+                    myPerr fnm lval_id "Identifier does not exist"; 
                     fatal "Identifier not valid";
                     None
             in
@@ -281,14 +276,14 @@ and make_l_value l_value_ast =
                     (*Check if not array*)
                     begin match e_typ with
                         | Some (TYPE_array (elem_typ,_)) -> 
-                            make_expr lval_expr_some;
+                            make_expr fnm lval_expr_some;
                             (*Check if index is int*)
                             if( lval_expr_some.expr_type <> Some TYPE_int )
-                            then( fatal "Array index must be an integer" );
+                            then ( myPerr fnm lval_id "Array index must be an integer"; fatal "Array index must be an integer" );
                             l_value_ast.l_value_type <- Some elem_typ                                
                             
                         | _ -> 
-                            fatal "Variable not an array"
+                            myPerr fnm lval_id "Variable not an array"; fatal "Variable not an array"
                     end
                 | None ->
                     l_value_ast.l_value_type <- e_typ
@@ -298,41 +293,41 @@ and make_l_value l_value_ast =
             l_value_ast.l_value_type <- Some TYPE_array (TYPE_byte,-1)
     end
 
-and make_stmt stmt_ast = 
+and make_stmt fnm stmt_ast = 
     begin match stmt_ast with
         | Null_stmt -> 
             ()
             
         | S_assign (st_l_value, st_expr) ->
-            make_expr st_expr;
-            make_l_value st_l_value;
+            make_expr fnm st_expr;
+            make_l_value fnm st_l_value;
             begin match (st_l_value.l_value_type, st_expr.expr_type) with
-                | (Some TYPE_array (TYPE_byte,siz),_)   -> if( siz < 0 ) then ( fatal "Cannot assign value to a string literal" )
+                | (Some TYPE_array (TYPE_byte,siz),_)   -> if( siz < 0 ) then (myPerr fnm (match st_l_value.l_value_raw with | L_str str -> str | _ -> "") "Cannot assign value to a string literal"; fatal "Cannot assign value to a string literal" )
                 | (Some TYPE_proc,_)                    -> fatal "L value is a procedure -- How did this happen?" (*Obsolete*)
                 | (_,Some TYPE_proc)                    -> fatal "Cannot assign a procedure" (*Obsolete*)
-                | (typ1,typ2)                           -> if(typ1 <> typ2)then(fatal "Assignment type mismatch")
+                | (typ1,typ2)                           -> if(typ1 <> typ2) then ( myPerr fnm (match st_l_value.l_value_raw with | L_id (x,_) -> x | _ -> "") "Assignment type mismatch"; fatal "Assignment type mismatch" )
             end
             
         | S_comp st_stmt_lst ->
-            List.iter make_stmt st_stmt_lst
+            List.iter (make_stmt fnm) st_stmt_lst
             
         | S_call st_func_call -> 
-            make_call st_func_call;
-            if( st_func_call.return_type <> Some TYPE_proc ) then ( fatal "This is a statement, function must be a procedure" )
+            make_call fnm st_func_call;
+            if( st_func_call.return_type <> Some TYPE_proc ) then ( myPerr fnm st_func_call.call_id "This is a statement, function must be a procedure"; fatal "This is a statement, function must be a procedure" )
             
         | S_if (st_cond,st_stmt,st_stmt_opt) ->
-            make_cond st_cond;
-            make_stmt st_stmt;
+            make_cond fnm st_cond;
+            make_stmt fnm st_stmt;
             begin match st_stmt_opt with
                 | Some st_stmt_some -> 
-                    make_stmt st_stmt_some
+                    make_stmt fnm st_stmt_some
                 | None -> 
                     ()
             end
                 
         | S_while (st_cond,st_stmt) -> 
-            make_cond st_cond;
-            make_stmt st_stmt
+            make_cond fnm st_cond;
+            make_stmt fnm st_stmt
             
         | S_return st_expr_opt -> 
             let funTypeTop = Stack.pop funTypeStack in
@@ -340,24 +335,25 @@ and make_stmt stmt_ast =
                 | Some st_expr_some ->
                     Stack.push funTypeTop funTypeStack;
                     if( funTypeTop = TYPE_proc )
-                    then( fatal "Procedure cannot return a value" )
-                    else( make_expr st_expr_some; if( st_expr_some.expr_type <> Some funTypeTop ) then ( fatal "Return type mismatch" ) )
+                    then (myPerr fnm "" "Procedure cannot return a value"; fatal "Procedure cannot return a value" )
+                    else ( make_expr fnm st_expr_some; if( st_expr_some.expr_type <> Some funTypeTop ) then ( myPerr fnm "" "Return type mismatch"; fatal "Return type mismatch" ) )
                 | None ->
                     Stack.push funTypeTop funTypeStack;
                     if( funTypeTop <> TYPE_proc )
-                    then( fatal "Return statement cannot be empty here" )
+                    then ( myPerr fnm "" "Return statement cannot be empty in this function"; fatal "Return statement cannot be empty in this function" )
             end    
     end
 
 and make_par f par_ast =
+    let fnm = match f.entry_info with | ENTRY_function finf -> ( match finf.function_full_name with | Some nm -> nm | _ -> "BAD-NONE" ) | _ -> "BAD" in
     begin match (par_ast.par_type,par_ast.par_pass_way) with
-        | (TYPE_array _, PASS_BY_VALUE) -> fatal "An array cannot be passed by value"
+        | (TYPE_array _, PASS_BY_VALUE) -> myPerr fnm par_ast.par_id "An array cannot be passed by value"; fatal "An array cannot be passed by value"
         | _ ->  
             let newPar = newParameter (id_make par_ast.par_id) par_ast.par_type par_ast.par_pass_way f true in
             par_ast.symb_id <- Some newPar.entry_id
     end
 
-and make_local local_ast = 
+and make_local fnm local_ast = 
     begin match local_ast with
         | Local_func loc_func ->
             make_func loc_func;
@@ -365,7 +361,7 @@ and make_local local_ast =
         | Local_var loc_var ->
             (*In case an array is declared, its size needs to be a positive integer*)
             begin match loc_var.var_type with
-                | TYPE_array (_,siz)    -> if(siz <= 0)then(fatal "Array size must be a positive integer")
+                | TYPE_array (_,siz)    -> if(siz <= 0) then (myPerr fnm loc_var.var_id "Array size must be a positive integer"; fatal "Array size must be a positive integer")
                 | _                     -> ()
             end;
             let newVar = newVariable (id_make loc_var.var_id) loc_var.var_type true in
@@ -373,8 +369,7 @@ and make_local local_ast =
     end
 
 and make_func func_ast =
-print_endline func_ast.func_id;
-    print_endline func_ast.full_name;
+
     let f_SYM = newFunction (id_make func_ast.func_id) true in
     let _ = begin match f_SYM.entry_info with
         | ENTRY_function func_info -> func_info.function_full_name <- Some func_ast.full_name
@@ -399,7 +394,7 @@ print_endline func_ast.func_id;
         end
     in
     List.iter set_parent_and_full_name func_ast.func_local;
-    List.iter make_local func_ast.func_local;
+    List.iter (make_local func_ast.full_name) func_ast.func_local;
     
     (* Helping func *)
     let set_par_offset par_ast = 
@@ -410,7 +405,9 @@ print_endline func_ast.func_id;
     in
     List.iter set_par_offset func_ast.func_pars;
 
-    List.iter make_stmt func_ast.func_stmt;
+    (* print_offsets_in_ast func_ast; *)
+
+    List.iter (make_stmt func_ast.full_name) func_ast.func_stmt;
     
     (* printSymbolTable (); *)
     closeScope ();
@@ -580,5 +577,6 @@ let seman tree =
 
     init_existing_functions ();
     make_func tree;
-    
+    if(tree.full_name <> "main" && List.length tree.func_pars > 0 ) then (fatal "Top-level function must be named 'main' if arguments are given"; raise Terminate);
+
     closeScope ();

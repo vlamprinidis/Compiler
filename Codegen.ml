@@ -397,7 +397,7 @@ and codegen_expr frame_ptr expr_ast = (* never returns a (llvalue) ptr to anythi
 
 and codegen_lval frame_ptr l_value_ast = (* returns a (llvalue) pointer to the element *)
     let correct_frame = get_deep_access_link frame_ptr l_value_ast.l_value_nesting_diff in
-    print_endline "frame got";
+
     begin match l_value_ast.l_value_raw with
         | L_id (_, None)      ->    if (l_value_ast.is_ptr)
                                     then(
@@ -567,16 +567,22 @@ let codegen tree =
         let main_lltype = function_type proc_type [||] in
         let main_llvalue = declare_function "main" main_lltype the_module in
         let main_bb = append_block context "entry block" main_llvalue in
+        
         position_at_end main_bb builder;
-
         codegen_func tree;
-        ignore (build_call main_llvalue [||] "" builder);
+        
+        let tree_llvalue = match (lookup_function tree.full_name the_module) with | Some fn -> fn | None -> fatal "main_call: Function not found"; raise Terminate in
+        (* let access_link = build_alloca (pointer_type bool_type) "tree access link" builder in *)
+        let access_link = const_pointer_null (pointer_type (pointer_type bool_type)) in
+
+        position_at_end main_bb builder;
+        ignore (build_call tree_llvalue [|access_link|] "" builder);
         ignore (build_ret_void builder)
 
     end else begin
         codegen_func tree
     end;
 
-    assert_valid_module the_module;
-    dump_module the_module
+    assert_valid_module the_module
+    ;dump_module the_module
 
