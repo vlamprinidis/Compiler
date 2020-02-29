@@ -1,4 +1,4 @@
-EXEFILE=alan
+EXEFILE=alanIR
 MLFILES=Hashcons.ml Identifier.ml Error.ml Types.ml Symbol.ml \
   Ast.ml Semantic.ml Lexer.ml Parser.ml Codegen.ml Main.ml
 MLIFILES=Hashcons.mli Identifier.mli Error.mli Types.mli Symbol.mli \
@@ -21,7 +21,7 @@ OCAMLDEP=ocamldep
 INCLUDES=
 LLVM_PACKAGES=-package llvm -package llvm.analysis
 
-default: alan
+default: $(EXEFILE)
 
 extend.cmo: extend.ml
 	$(OCAMLC) -pp "camlp5o pa_extend.cmo q_MLast.cmo" -I +camlp5 -c $<

@@ -4,6 +4,7 @@ open Ast
 open Error
 open Types
 open Symbol
+open Format
 
 exception Error of string
 
@@ -583,6 +584,6 @@ let codegen tree =
         codegen_func tree
     end;
 
-    assert_valid_module the_module
-    ;dump_module the_module
+    assert_valid_module the_module;
+    printf "%s" (string_of_llmodule the_module)
 
