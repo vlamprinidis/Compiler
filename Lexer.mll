@@ -36,7 +36,7 @@ rule lexer = parse
   | "'" (chars as ch) "'" {T_char ch}
   | "'" (escape1 as scp1) "'" {T_char  (escape1char scp1.[1])}
   | "'" (escape2 as scp2) "'" {T_char  (escape2char scp2)}
-  | '"' (( chars | escape1 | escape2 )* as str) '"' {T_string str}
+  | '"' {str_lit [] lexbuf}
 
   | '='      { T_assign }
   | '+'      { T_plus }
@@ -87,3 +87,9 @@ and comments level = parse
     | eof { print_endline "Comments are not closed";
             exit 1
           }
+
+and str_lit acc = parse
+  | '"' { T_string (String.concat "" (List.map (String.make 1)  (List.rev acc)))  }
+  | chars as ch { str_lit (ch::acc) lexbuf}
+  | escape1 as scp1 { str_lit ((escape1char scp1.[1])::acc) lexbuf}
+  | escape2 as scp2 { str_lit ((escape2char scp2)::acc) lexbuf}
