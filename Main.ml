@@ -2,13 +2,19 @@ open Lexer
 open Parser
 open Semantic
 open Codegen
+open Optimizations
+open Llvm
+open Format
 
 let main =
   let lexbuf = Lexing.from_channel stdin in
   try
     let tree = Parser.program Lexer.lexer lexbuf in
     seman tree;
-    codegen tree
+    let llvm_module = codegen tree in
+    if (Array.length Sys.argv == 2) && (Sys.argv.(1) = "-O") then optimize llvm_module;
+    print_string (string_of_llmodule llvm_module)
+
     
     (*
     let 

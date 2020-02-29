@@ -1,6 +1,6 @@
 EXEFILE=alanIR
 MLFILES=Hashcons.ml Identifier.ml Error.ml Types.ml Symbol.ml \
-  Ast.ml Semantic.ml Lexer.ml Parser.ml Codegen.ml Main.ml
+  Ast.ml Semantic.ml Lexer.ml Parser.ml Codegen.ml Optimizations.ml Main.ml
 MLIFILES=Hashcons.mli Identifier.mli Error.mli Types.mli Symbol.mli \
   Parser.mli
 CMOFILES=$(patsubst %.ml,%.cmo,$(MLFILES))
@@ -19,7 +19,8 @@ OCAMLC=ocamlc $(OCAMLC_FLAGS)
 OCAMLOPT=ocamlopt $(OCAMLOPT_FLAGS)
 OCAMLDEP=ocamldep
 INCLUDES=
-LLVM_PACKAGES=-package llvm -package llvm.analysis
+LLVM_PACKAGES=-package llvm -package llvm.analysis -package llvm.scalar_opts \
+	      -package llvm.ipo
 
 default: $(EXEFILE)
 

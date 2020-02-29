@@ -585,5 +585,5 @@ let codegen tree =
     end;
 
     assert_valid_module the_module;
-    printf "%s" (string_of_llmodule the_module)
+    the_module
 
