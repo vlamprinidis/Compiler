@@ -1,5 +1,6 @@
 {
 	open Parser
+  open Error
     
     let escape1char scp = match scp with
     | 'n' -> '\n'
@@ -84,8 +85,7 @@ and comments level = parse
              comments (level+1) lexbuf
            }
     | _ { comments level lexbuf }
-    | eof { print_endline "Comments are not closed";
-            exit 1
+    | eof { internal "Comments are not closed"; raise Exit
           }
 
 and str_lit acc = parse

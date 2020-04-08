@@ -109,7 +109,7 @@ let print_offsets_in_ast func_ast =
     List.iter print_var func_ast.func_local;
     ignore (printf "%s \n" " ")
 
-let myPerr fnm str msg = printf "\nIn function: '%s': '%s'\nMessage: %s\n" fnm str msg
+let myPerr fnm str msg = Printf.eprintf "\nIn function: '%s': '%s'\nMessage: %s\n" fnm str msg
 
 let rec make_cond fnm cond_ast =
     begin match cond_ast with
@@ -174,16 +174,16 @@ and make_call fnm call_ast =
                 pretty_typ std_formatter s;
                 printf " ";
                 match info with
-                    | PASS_BY_VALUE -> printf "%s\n" " - [PASS_BY_VALUE]"
-                    | PASS_BY_REFERENCE -> printf "%s\n" " - [PASS_BY_REFERENCE]"
+                    | PASS_BY_VALUE -> Printf.eprintf "%s\n" " - [PASS_BY_VALUE]"
+                    | PASS_BY_REFERENCE -> Printf.eprintf "%s\n" " - [PASS_BY_REFERENCE]"
             in
             
             let myPrint_act (s,info) =
                 pretty_typ std_formatter s;
                 printf " ";
                 match info with
-                    | E_lvalue _ -> printf "%s\n" " - [L_value]"
-                    | _ -> printf "%s\n" " - [NOT_L_value]"
+                    | E_lvalue _ -> Printf.eprintf "%s\n" " - [L_value]"
+                    | _ -> Printf.eprintf "%s\n" " - [NOT_L_value]"
             in
 
             if( ( List.length declared_param_typ_lst = List.length actual_param_typ_lst ) && 
@@ -194,12 +194,12 @@ and make_call fnm call_ast =
             
             else(
                 myPerr fnm call_ast.call_id "Incorrect argument format";
-                printf "%s\n" "Expected parameters: ";
+                Printf.eprintf "%s\n" "Expected parameters: ";
                 List.iter myPrint_dec declared_param_typ_lst;
-                print_newline ();
-                printf "%s\n" "Given parameters:    "; 
+                Printf.eprintf "\n";
+                Printf.eprintf "%s\n" "Given parameters:    "; 
                 List.iter myPrint_act actual_param_typ_lst;
-                print_newline ();
+                Printf.eprintf "\n";
                 fatal "Incorrect argument format" 
             )
             

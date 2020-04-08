@@ -131,8 +131,9 @@ let newEntry id inf err =
     !currentScope.sco_entries <- e :: !currentScope.sco_entries;
     e
   with Failure_NewEntry e ->
-    error "duplicate identifier %a" pretty_id id;
-    e
+    error "duplicate identifier %a" pretty_id id; 
+    (*e*)
+    raise (Failure_NewEntry e)
 
 let lookupEntry id how err =
   let scc = !currentScope in
