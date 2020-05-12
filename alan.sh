@@ -5,7 +5,7 @@ set -o pipefail
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 alan="$DIR/alanIR"
-llc="llc-6.0"
+llc="llc"
 
 usage () {
     echo "Usage: $0 [-O] filename" >&2
